@@ -1,0 +1,20 @@
+{
+  "name": "fund-watch-web",
+  "version": "1.0.0",
+  "description": "天天基金数据 Web UI：自选基金 + 盘中实时估值 + 多种数据查询（搜索/详情/净值走势）",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "node scripts/dev-server.mjs",
+    "dev:watch": "node --watch scripts/dev-server.mjs",
+    "dev:open": "node scripts/dev-server.mjs --open",
+    "deploy": "vercel deploy --prod",
+    "test:api": "node scripts/test-api.mjs",
+    "test:e2e": "node scripts/smoke-test.cjs"
+  },
+  "devDependencies": {
+    "vercel": "^37.0.0"
+  }
+}

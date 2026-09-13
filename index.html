@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
+<title>基金盯盘 · 天天基金数据 Web UI</title>
+<style>
+  :root {
+    --bg: #0f172a; --panel: #1e293b; --panel2: #273449; --line: #334155;
+    --text: #e2e8f0; --muted: #94a3b8; --primary: #38bdf8; --up: #ef4444; --down: #22c55e;
+    --gold: #fbbf24; --radius: 12px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { background: var(--bg); color: var(--text); font-family: "Microsoft YaHei", "PingFang SC", sans-serif; min-height: 100vh; }
+  header { position: sticky; top: 0; z-index: 10; background: rgba(15,23,42,.92); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 14px 16px; }
+  .top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .logo { font-size: 20px; font-weight: 700; }
+  .logo em { color: var(--primary); font-style: normal; }
+  nav.tabs { display: flex; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+  .tab { padding: 7px 16px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; transition: .2s; min-height: 36px; }
+  .tab.active { background: var(--primary); color: #0b1220; border-color: var(--primary); font-weight: 700; }
+  main.wrap { padding-top: 20px; padding-bottom: 60px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; margin-bottom: 16px; }
+  .panel h2 { font-size: 16px; margin-bottom: 14px; color: var(--gold); }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  input[type=text] { flex: 1; min-width: 200px; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel2); color: var(--text); font-size: 14px; outline: none; }
+  input[type=text]:focus { border-color: var(--primary); }
+  .btn { padding: 10px 18px; border-radius: 10px; border: none; background: var(--primary); color: #0b1220; font-weight: 700; cursor: pointer; font-size: 14px; min-height: 40px; }
+  .btn.ghost { background: transparent; border: 1px solid var(--line); color: var(--muted); }
+  .btn.danger { background: rgba(239,68,68,.15); color: var(--up); border: 1px solid rgba(239,68,68,.4); }
+  .fund-card { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: var(--radius); background: var(--panel2); border: 1px solid var(--line); margin-bottom: 10px; flex-wrap: wrap; }
+  .fc-name { flex: 1; min-width: 160px; }
+  .fc-name .n { font-weight: 700; font-size: 15px; }
+  .fc-name .c { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .fc-quote { text-align: right; min-width: 120px; }
+  .q-num { font-size: 20px; font-weight: 700; }
+  .q-pct { font-size: 14px; margin-top: 2px; }
+  .q-time { color: var(--muted); font-size: 11px; margin-top: 2px; }
+  .up { color: var(--up); } .down { color: var(--down); } .flat { color: var(--muted); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; background: var(--panel2); color: var(--muted); border: 1px solid var(--line); margin-left: 6px; }
+  .search-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 10px; background: var(--panel2); border: 1px solid var(--line); margin-bottom: 8px; flex-wrap: wrap; }
+  .si-info { flex: 1; min-width: 180px; }
+  .si-info .n { font-weight: 600; }
+  .si-info .c { color: var(--muted); font-size: 12px; }
+  .hint { color: var(--muted); font-size: 13px; line-height: 1.7; }
+  .grid-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .metric { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; text-align: center; }
+  .metric .k { color: var(--muted); font-size: 12px; }
+  .metric .v { font-size: 16px; font-weight: 700; margin-top: 4px; }
+  canvas { width: 100%; height: 260px; background: var(--panel2); border-radius: 10px; border: 1px solid var(--line); }
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 420px; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--gold); color: #0b1220; padding: 10px 22px; border-radius: 999px; font-size: 14px; font-weight: 700; opacity: 0; pointer-events: none; transition: .3s; z-index: 99; max-width: 90vw; text-align: center; }
+  .toast.show { opacity: 1; }
+  .empty { text-align: center; color: var(--muted); padding: 40px 0; font-size: 14px; }
+  .auto-refresh { color: var(--muted); font-size: 12px; margin-left: auto; }
+  /* ===== 移动端自适应 ===== */
+  @media (max-width: 640px) {
+    body { padding-bottom: env(safe-area-inset-bottom, 0px); }
+    header { position: sticky; top: 0; }
+    .top { gap: 8px; }
+    .logo { font-size: 17px; }
+    nav.tabs { width: 100%; order: 3; margin-left: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap; padding-bottom: 4px; }
+    .tab { flex: 0 0 auto; min-height: 44px; font-size: 14px; padding: 8px 18px; }
+    main.wrap { padding: 14px 12px 40px; }
+    .panel { padding: 14px; border-radius: 10px; }
+    input[type=text] { font-size: 16px; min-height: 44px; } /* ≥16px 防 iOS 聚焦自动放大 */
+    .btn { min-height: 44px; padding: 10px 16px; } /* 触控热区 ≥44px */
+    .fund-card { gap: 10px; padding: 12px; }
+    .fc-name { min-width: 100%; }
+    .fc-quote { text-align: left; min-width: 0; flex: 1; }
+    .fund-card .row { width: 100%; }
+    .fund-card .row .btn { flex: 1; text-align: center; }
+    .search-item { gap: 8px; padding: 10px 12px; }
+    .si-info { min-width: 100%; }
+    .search-item .row { width: 100%; }
+    .search-item .row .btn { flex: 1; text-align: center; }
+    .grid-metrics { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .metric { padding: 10px 6px; }
+    .metric .v { font-size: 14px; }
+    .metric .k { font-size: 11px; }
+    canvas { height: 200px; }
+    .row > input[type=text] { min-width: 100%; }
+    .row > .btn { flex: 1; }
+  }
+  @media (max-width: 380px) {
+    .grid-metrics { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap top">
+    <div class="logo">📈 基金盯盘 <em>FundWatch</em></div>
+    <nav class="tabs">
+      <button class="tab active" data-tab="watch">📌 自选</button>
+      <button class="tab" data-tab="search">🔍 搜索</button>
+      <button class="tab" data-tab="quote">⚡ 实时估值</button>
+      <button class="tab" data-tab="detail">📊 详情</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <!-- 自选 -->
+  <section id="tab-watch">
+    <div class="panel">
+      <div class="row">
+        <h2 style="margin:0;">我的自选基金</h2>
+        <span class="auto-refresh" id="refresh-state">自动刷新中 · 30s</span>
+      </div>
+    </div>
+    <div id="watch-list"></div>
+    <div class="hint" style="margin-top:8px;">💡 添加自选：到「搜索」找到基金后点「加入自选」；或直接在「实时估值」页输入代码批量查询。自选保存在浏览器 localStorage。</div>
+  </section>
+
+  <!-- 搜索 -->
+  <section id="tab-search" style="display:none">
+    <div class="panel">
+      <h2>搜索基金</h2>
+      <div class="row">
+        <input type="text" id="search-input" placeholder="输入基金名称 / 代码 / 拼音缩写，如：中证A500、161725、A500">
+        <button class="btn" id="search-btn">搜索</button>
+      </div>
+    </div>
+    <div id="search-result"></div>
+  </section>
+
+  <!-- 实时估值 -->
+  <section id="tab-quote" style="display:none">
+    <div class="panel">
+      <h2>盘中实时估值查询</h2>
+      <div class="row">
+        <input type="text" id="quote-input" placeholder="输入基金代码，逗号分隔，最多10只，如：161725,000001,110022">
+        <button class="btn" id="quote-btn">查询估值</button>
+        <button class="btn ghost" id="quote-watch-btn">全部加入自选</button>
+      </div>
+    </div>
+    <div id="quote-list"></div>
+  </section>
+
+  <!-- 详情 -->
+  <section id="tab-detail" style="display:none">
+    <div class="panel">
+      <h2>基金详情与净值走势</h2>
+      <div class="row">
+        <input type="text" id="detail-input" placeholder="输入6位基金代码，如：161725">
+        <button class="btn" id="detail-btn">查看详情</button>
+      </div>
+    </div>
+    <div id="detail-content"></div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+/* ============ 工具 ============ */
+const $ = (s) => document.querySelector(s);
+const LS_KEY = 'fundWatch:favs';
+const fmt = (v) => (v === '' || v == null ? '--' : v);
+const fmtNum = (v, d = 4) => (v === '' || v == null ? '--' : Number(v).toFixed(d));
+const pctCls = (v) => { const n = Number(v); return isNaN(n) || n === 0 ? 'flat' : (n > 0 ? 'up' : 'down'); };
+const sign = (v) => { const n = Number(v); return isNaN(n) ? '' : (n > 0 ? '+' : ''); };
+
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._h);
+  t._h = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+function getFavs() { try { return JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch { return []; } }
+function saveFavs(list) { localStorage.setItem(LS_KEY, JSON.stringify(list)); }
+function isFav(code) { return getFavs().some((f) => f.code === code); }
+function addFav(code, name) {
+  const list = getFavs();
+  if (!list.some((f) => f.code === code)) { list.push({ code, name: name || code }); saveFavs(list); }
+}
+function delFav(code) { saveFavs(getFavs().filter((f) => f.code !== code)); }
+
+async function api(path) {
+  const r = await fetch(path);
+  const j = await r.json();
+  if (!j.ok) throw new Error(j.error || '接口错误');
+  return j;
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/* ============ 标签页 ============ */
+document.querySelectorAll('.tab').forEach((b) => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach((x) => x.classList.remove('active'));
+    b.classList.add('active');
+    ['watch', 'search', 'quote', 'detail'].forEach((t) => { $('#tab-' + t).style.display = t === b.dataset.tab ? '' : 'none'; });
+  });
+});
+
+/* ============ 自选列表 + 自动刷新估值 ============ */
+function renderQuoteCard(f) {
+  const pct = f.gszzl !== '' && f.gszzl != null ? Number(f.gszzl) : null;
+  const cls = pct == null ? 'flat' : (pct > 0 ? 'up' : (pct < 0 ? 'down' : 'flat'));
+  const time = f.gztime ? (f.available ? `估值时间 ${f.gztime}` : `最新净值 ${f.gztime}`) : '';
+  const tag = f.available ? '<span class="badge">盘中估值</span>' : '<span class="badge" style="border-color:rgba(251,191,36,.5);color:var(--gold);">净值(非盘中)</span>';
+  return `
+    <div class="fund-card">
+      <div class="fc-name">
+        <div class="n">${esc(f.name || f.code)} ${tag}</div>
+        <div class="c">${esc(f.code)} · ${time}</div>
+      </div>
+      <div class="fc-quote">
+        <div class="q-num ${cls}">${fmtNum(f.gsz)}</div>
+        <div class="q-pct ${cls}">${pct == null ? '--' : sign(pct) + pct.toFixed(2) + '%'}</div>
+        <div class="q-time">昨净 ${fmtNum(f.dwjz)}</div>
+      </div>
+      <div class="row">
+        <button class="btn ghost" onclick="openDetail('${esc(f.code)}')">详情</button>
+        <button class="btn danger" onclick="removeWatch('${esc(f.code)}')">删除</button>
+      </div>
+    </div>`;
+}
+
+async function refreshWatch() {
+  const list = getFavs();
+  const box = $('#watch-list');
+  if (!list.length) { box.innerHTML = '<div class="empty">还没有自选基金，去「搜索」添加吧 🎯</div>'; return; }
+  box.innerHTML = '<div class="hint">加载中…</div>';
+  try {
+    const j = await api('/api/estimate?codes=' + list.map((f) => f.code).join(','));
+    const map = {};
+    j.items.forEach((it) => { map[it.code] = it; });
+    box.innerHTML = list.map((f) => {
+      const it = map[f.code] || { code: f.code, name: f.name, gsz: '', gszzl: '', gztime: '', dwjz: '' };
+      if (!it.name) it.name = f.name;
+      return renderQuoteCard(it);
+    }).join('');
+  } catch (e) {
+    box.innerHTML = `<div class="empty">估值接口暂不可用：${esc(e.message)}</div>`;
+  }
+}
+
+function removeWatch(code) { delFav(code); toast('已删除 ' + code); refreshWatch(); }
+function openDetail(code) { $('#detail-input').value = code; loadDetail(code); document.querySelector('.tab[data-tab=detail]').click(); }
+
+/* ============ 搜索 ============ */
+let searchTimer = null;
+$('#search-input').addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => doSearch(), 400);
+});
+$('#search-btn').addEventListener('click', doSearch);
+$('#search-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(); });
+
+async function doSearch() {
+  const kw = $('#search-input').value.trim();
+  const box = $('#search-result');
+  if (!kw) { box.innerHTML = ''; return; }
+  box.innerHTML = '<div class="hint">搜索中…</div>';
+  try {
+    const j = await api('/api/search?key=' + encodeURIComponent(kw));
+    if (!j.items.length) { box.innerHTML = '<div class="empty">未找到相关基金，换个关键词试试</div>'; return; }
+    box.innerHTML = j.items.map((it) => `
+      <div class="search-item">
+        <div class="si-info">
+          <div class="n">${esc(it.name)} <span class="badge">${esc(it.category || '基金')}</span></div>
+          <div class="c">代码 ${esc(it.code)}${it.pinyin ? ' · ' + esc(it.pinyin) : ''}</div>
+        </div>
+        <div class="row">
+          ${isFav(it.code)
+            ? '<button class="btn ghost" disabled>已自选</button>'
+            : `<button class="btn" onclick="addWatch('${esc(it.code)}','${esc(it.name)}')">＋ 加入自选</button>`}
+          <button class="btn ghost" onclick="openDetail('${esc(it.code)}')">详情</button>
+        </div>
+      </div>`).join('');
+  } catch (e) {
+    box.innerHTML = `<div class="empty">搜索失败：${esc(e.message)}</div>`;
+  }
+}
+
+function addWatch(code, name) { addFav(code, name); toast('已加入自选：' + name); doSearch(); refreshWatch(); }
+
+/* ============ 实时估值 ============ */
+$('#quote-btn').addEventListener('click', doQuote);
+$('#quote-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') doQuote(); });
+$('#quote-watch-btn').addEventListener('click', () => {
+  const codes = $('#quote-input').value.split(/[,，\s]+/).filter(Boolean);
+  codes.forEach((c) => { if (/^\d{6}$/.test(c)) addFav(c, c); });
+  toast('已加入自选 ' + codes.length + ' 只');
+  refreshWatch();
+});
+
+async function doQuote() {
+  const codes = $('#quote-input').value.split(/[,，\s]+/).map((s) => s.trim()).filter((s) => /^\d{6}$/.test(s)).slice(0, 10);
+  const box = $('#quote-list');
+  if (!codes.length) { box.innerHTML = '<div class="empty">请输入有效的6位基金代码</div>'; return; }
+  box.innerHTML = '<div class="hint">查询中…</div>';
+  try {
+    const j = await api('/api/estimate?codes=' + codes.join(','));
+    box.innerHTML = j.items.map(renderQuoteCard).join('');
+  } catch (e) {
+    box.innerHTML = `<div class="empty">查询失败：${esc(e.message)}</div>`;
+  }
+}
+
+/* ============ 详情（服务端代理优先 + 浏览器直连兜底 + 净值走势 Canvas） ============ */
+$('#detail-btn').addEventListener('click', () => loadDetail($('#detail-input').value.trim()));
+$('#detail-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadDetail(e.target.value.trim()); });
+
+function loadPingZhongData(code, timeout = 12000) {
+  // 兜底通道：浏览器直连 pingzhongdata（部分手机网络/海外网络会失败，故仅作 fallback）
+  return new Promise((resolve, reject) => {
+    const key = '__pd' + code + '_' + Date.now();
+    let done = false;
+    const GLOBALS = ['fS_name', 'fS_code', 'Data_netWorthTrend', 'Data_ACWorthTrend',
+      'syl_1z', 'syl_1y', 'syl_6y', 'syl_1n', 'syl_3y', 'fund_Rate', 'fund_sourceRate', 'fund_minsg'];
+    function cleanup() {
+      clearTimeout(timer);
+      const s = document.getElementById(key);
+      if (s) s.remove();
+      GLOBALS.forEach((g) => { try { delete window[g]; } catch {} });
+    }
+    const timer = setTimeout(() => { cleanup(); reject(new Error('直连加载超时')); }, timeout);
+    const s = document.createElement('script');
+    s.id = key;
+    s.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?rt=${Date.now()}`;
+    s.onload = () => {
+      if (done) return; done = true;
+      const raw = Array.isArray(window.Data_netWorthTrend) ? window.Data_netWorthTrend : [];
+      const num = (v) => (v === undefined || v === '' ? null : Number(v));
+      const iso = (x) => new Date(x).toISOString().slice(0, 10);
+      const snap = {
+        name: window.fS_name || code,
+        rate: window.fund_Rate, sourceRate: window.fund_sourceRate, minsg: window.fund_minsg,
+        metrics: { m1: num(window.syl_1y), m6: num(window.syl_6y), y1: num(window.syl_1n), y3: num(window.syl_3y) },
+        latestNav: raw.length ? raw[raw.length - 1].y : null,
+        latestDate: raw.length ? iso(raw[raw.length - 1].x) : '',
+        trend: raw.slice(-240).map((p) => ({ date: iso(p.x), nav: p.y })),
+        _via: 'direct',
+      };
+      cleanup();
+      resolve(snap);
+    };
+    s.onerror = () => { if (!done) { done = true; cleanup(); reject(new Error('直连脚本加载失败')); } };
+    document.head.appendChild(s);
+  });
+}
+
+async function fetchDetail(code) {
+  // 主通道：服务端代理（手机无需直连东方财富域名，规避网络拦截）
+  try {
+    const j = await api(`/api/detail?code=${code}`);
+    if (j && j.ok && j.found) return { ...j, _via: 'proxy' };
+    if (j && j.ok && !j.found) throw new Error('未找到该基金的净值数据');
+  } catch (e) {
+    console.warn('detail proxy 不可用，回退浏览器直连：', e.message);
+    return await loadPingZhongData(code);
+  }
+}
+
+async function loadDetail(code) {
+  const box = $('#detail-content');
+  if (!/^\d{6}$/.test(code)) { box.innerHTML = '<div class="empty">请输入6位基金代码</div>'; return; }
+  box.innerHTML = '<div class="hint">加载中…</div>';
+  try {
+    const pd = await fetchDetail(code);
+    const name = pd.name || code;
+    const trend = Array.isArray(pd.trend) ? pd.trend : [];
+    const M = pd.metrics || {};
+    const metrics = [
+      ['近1月', M.m1], ['近6月', M.m6], ['近1年', M.y1], ['近3年', M.y3],
+    ];
+    const rate = pd.rate || '--';
+    const srcRate = pd.sourceRate || '--';
+    const minsg = pd.minsg || '--';
+    const mday = pd.latestDate || '--';
+    const last = pd.latestNav == null ? '--' : pd.latestNav;
+
+    box.innerHTML = `
+      <div class="panel">
+        <div class="row">
+          <div><div style="font-size:18px;font-weight:700;">${esc(name)}</div>
+          <div class="hint">${code} · 最新净值 ${fmt(last)}（${mday}）· 申购费率 ${fmt(rate)}（原 ${fmt(srcRate)}）· 起购 ${fmt(minsg)}元</div></div>
+          <button class="btn ghost" onclick="addWatch('${code}','${esc(name)}')">＋ 加入自选</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>阶段收益（%）</h2>
+        <div class="grid-metrics">
+          ${metrics.map(([k, v]) => `<div class="metric"><div class="k">${k}</div><div class="v ${pctCls(v)}">${fmtNum(v, 2)}</div></div>`).join('')}
+        </div>
+      </div>
+      <div class="panel">
+        <h2>单位净值走势（近 ${trend.length} 期）</h2>
+        <canvas id="nav-chart"></canvas>
+      </div>
+      <div class="panel">
+        <h2>历史净值（近 15 期）</h2>
+        <div id="nav-table"></div>
+      </div>`;
+    drawChart(trend.slice(-180));
+    loadNavTable(code);
+  } catch (e) {
+    box.innerHTML = `<div class="empty">详情加载失败：${esc(e.message)}</div>`;
+  }
+}
+
+function drawChart(trend) {
+  const cv = $('#nav-chart');
+  if (!cv || !trend.length) return;
+  const ctx = cv.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const W = cv.clientWidth;
+  const H = cv.clientHeight || 260;   // 跟随 CSS 高度（移动端 200px）
+  cv.width = W * dpr; cv.height = H * dpr; ctx.scale(dpr, dpr);
+  const pad = { l: 10, r: 10, t: 16, b: 22 };
+  const values = trend.map((p) => p.nav);
+  let min = Math.min(...values), max = Math.max(...values);
+  const span = max - min || 1; min -= span * 0.08; max += span * 0.08;
+  const X = (i) => pad.l + (i / (trend.length - 1)) * (W - pad.l - pad.r);
+  const Y = (v) => pad.t + (1 - (v - min) / (max - min)) * (H - pad.t - pad.b);
+  ctx.clearRect(0, 0, W, H);
+  ctx.strokeStyle = '#334155'; ctx.lineWidth = 1;
+  for (let g = 0; g <= 3; g++) {
+    const y = pad.t + (g / 3) * (H - pad.t - pad.b);
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W - pad.r, y); ctx.stroke();
+  }
+  const up = values[values.length - 1] >= values[0];
+  ctx.strokeStyle = up ? '#ef4444' : '#22c55e'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  trend.forEach((p, i) => { i === 0 ? ctx.moveTo(X(i), Y(p.nav)) : ctx.lineTo(X(i), Y(p.nav)); });
+  ctx.stroke();
+  const li = trend.length - 1;
+  ctx.fillStyle = up ? '#ef4444' : '#22c55e';
+  ctx.beginPath(); ctx.arc(X(li), Y(values[li]), 4, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#94a3b8'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText(trend[0].date, pad.l, H - 6);
+  ctx.fillText(trend[li].date, W - pad.r, H - 6);
+}
+
+async function loadNavTable(code) {
+  const box = $('#nav-table');
+  try {
+    const j = await api(`/api/nav?code=${code}&page=1&size=15`);
+    if (!j.items.length) { box.innerHTML = '<div class="hint">暂无净值数据</div>'; return; }
+    box.innerHTML = `<div class="table-scroll"><table><thead><tr><th>日期</th><th>单位净值</th><th>累计净值</th><th>日涨跌</th><th>状态</th></tr></thead>
+      <tbody>${j.items.map((d) => `<tr>
+        <td>${d.date}</td><td>${fmtNum(d.dwjz)}</td><td>${fmtNum(d.ljjz)}</td>
+        <td class="${pctCls(d.jzzzl)}">${sign(d.jzzzl)}${fmtNum(d.jzzzl, 2)}%</td>
+        <td class="hint">${esc(d.sgzt || '')}</td></tr>`).join('')}</tbody></table></div>`;
+  } catch (e) {
+    box.innerHTML = `<div class="hint">净值表加载失败：${esc(e.message)}</div>`;
+  }
+}
+
+/* ============ 启动 ============ */
+refreshWatch();
+setInterval(() => { if (!document.hidden) refreshWatch(); }, 30000); // 页面隐藏时暂停刷新省电
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshWatch(); });
+window.addEventListener('storage', refreshWatch);
+</script>
+</body>
+</html>
