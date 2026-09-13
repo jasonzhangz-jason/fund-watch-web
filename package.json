@@ -10,9 +10,14 @@
     "dev": "node scripts/dev-server.mjs",
     "dev:watch": "node --watch scripts/dev-server.mjs",
     "dev:open": "node scripts/dev-server.mjs --open",
+    "dev:no-qr": "node scripts/dev-server.mjs --no-qr",
     "deploy": "vercel deploy --prod",
     "test:api": "node scripts/test-api.mjs",
-    "test:e2e": "node scripts/smoke-test.cjs"
+    "test:e2e": "node scripts/smoke-test.cjs",
+    "test:mobile": "node scripts/smoke-mobile.cjs",
+    "test:qr": "node scripts/qr-verify.mjs",
+    "test:qr:decode": "node scripts/qr-decode-test.cjs",
+    "test:qr:e2e": "node scripts/qr-e2e-test.cjs"
   },
   "devDependencies": {
     "vercel": "^37.0.0"

@@ -53,14 +53,22 @@
 ```bash
 cd fund-watch-web
 
-npm run dev            # 启动调试服务器 → http://localhost:8787
+npm run dev            # 启动调试服务器 → http://localhost:8787（自动打印手机扫码二维码）
 npm run dev:watch      # 启动 + 文件变更自动重启（改 api/*.js 热重载）
 npm run dev:open       # 启动并自动打开浏览器
 # 或直接：
 node scripts/dev-server.mjs              # 等价 npm run dev
 node --watch scripts/dev-server.mjs      # 等价 npm run dev:watch
+node scripts/dev-server.mjs --no-qr      # 不打印终端二维码
 PORT=9000 node scripts/dev-server.mjs    # 自定义端口
 ```
+
+### 📱 手机扫码调试（启动即生成二维码）
+启动后终端会**直接打印一个二维码**（零依赖自研编码器，版本 1-10 / 纠错 L-M-Q-H），用手机相机扫一下即可打开局域网地址：
+
+- **扫码页面**：电脑上打开 `http://localhost:8787/__qr` 显示放大版二维码（适合只有相机、没装扫码 App 的场景），支持 `/__qr?url=http://任意地址`
+- **关闭二维码**：`node scripts/dev-server.mjs --no-qr`
+- **二维码质量自检**：`npm run test:qr`（与权威库 `qrcode` 逐位比对，需 `npm i -D qrcode`）；`node scripts/qr-decode-test.cjs`（用 jsQR 真实解码验证可扫，需 `npm i -D jsqr`）
 
 ### 调试要点
 - **前端调试**：浏览器打开 `http://localhost:8787`，按 `F12` → Console/Network 面板看请求与报错；静态文件已禁用缓存，改 `index.html` 直接刷新即可。
@@ -69,13 +77,15 @@ PORT=9000 node scripts/dev-server.mjs    # 自定义端口
   - 搜索：`http://localhost:8787/api/search?key=中证A500`
   - 净值：`http://localhost:8787/api/nav?code=161725&size=5`
   - 估值：`http://localhost:8787/api/estimate?codes=161725,000001`
-- **接口回归**：`npm run test:api`（直连上游验证 3 个代理函数）、`npm run test:e2e`（Puppeteer 端到端冒烟，需先启动 `npm run dev`）。
+  - 详情：`http://localhost:8787/api/detail?code=161725`
+- **接口回归**：`npm run test:api`（直连上游验证 4 个代理函数）、`npm run test:e2e`（Puppeteer 端到端冒烟，需先启动 `npm run dev`）。
 - **服务器日志**：控制台会实时打印每个请求的 ✅/❌ 状态与耗时；`/api/*` 抛错会打印完整堆栈。
 - **端口被占用**：会提示「端口已被占用」，换 `PORT=9000 node scripts/dev-server.mjs` 即可。
 
 ### 📱 手机访问（自适应）
 - 页面**完全响应式**：手机浏览器直接可用，标签页横滑、触控热区 ≥44px、无横向溢出、输入框 ≥16px 防 iOS 聚焦放大、表格横向滚动、隐藏页面时自动暂停刷新省电。
-- **同一 Wi-Fi 下用手机调试**：启动 `npm run dev` 后，控制台会打印「局域网」地址（如 `http://192.168.x.x:8787`），手机浏览器打开即可。
+- **同一 Wi-Fi 下用手机调试**：启动后用手机**扫终端二维码**，或手动输入控制台打印的「局域网」地址（如 `http://192.168.x.x:8787`）。
+- **详情页不依赖手机直连东方财富**：详情数据走 `/api/detail` 服务端代理，避免手机网络拦截导致的「脚本加载失败」。
 - **注意**：Windows 防火墙首次可能拦截，允许 Node.js 网络访问即可；手机与电脑需在同一局域网。
 - **生产环境**：部署到 Vercel 后自带 HTTPS 与全球 CDN，手机直接访问线上域名即可，无需局域网。
 

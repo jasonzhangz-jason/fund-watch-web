@@ -1,19 +1,22 @@
 // 本地开发调试服务器：静态文件 + /api/* 代理（模拟 vercel dev，无需安装 vercel CLI）
 // 用法：
-//   node scripts/dev-server.mjs              # 启动 http://localhost:8787
+//   node scripts/dev-server.mjs              # 启动 http://localhost:8787（终端打印手机扫码二维码）
 //   node --watch scripts/dev-server.mjs      # 文件变更自动重启（api/*.js 热重载）
 //   node scripts/dev-server.mjs --open       # 启动后自动打开浏览器
+//   node scripts/dev-server.mjs --no-qr      # 不打印终端二维码
 //   PORT=9000 node scripts/dev-server.mjs    # 自定义端口
 import http from 'http';
 import { createRequire } from 'module';
 import { readFile } from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { toTerminal, toSVG } from './qr.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = process.env.PORT || 8787;
 const OPEN = process.argv.includes('--open');
+const NO_QR = process.argv.includes('--no-qr');
 
 const handlers = {
   search: require('../api/search.js'),
@@ -46,6 +49,41 @@ function log(method, url, status, ms) {
 const server = http.createServer(async (req, res) => {
   const t0 = Date.now();
   const url = req.url.split('?')[0];
+
+  // ---- /__qr ：放大版二维码页面（电脑屏幕上显示，手机直接扫） ----
+  if (url === '/__qr' || url === '/qr') {
+    const q = parseQuery(req.url);
+    const lan = lanURLs(PORT);
+    const target = q.url || lan[0] || `http://localhost:${PORT}`;
+    try {
+      const svg = toSVG(target, { ecc: 'M' });
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.end(`<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>扫码访问 FundWatch</title>
+<style>
+  body{margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
+       background:#0f172a;color:#e2e8f0;font-family:"Microsoft YaHei","PingFang SC",sans-serif;gap:18px;padding:24px}
+  h1{font-size:20px;margin:0;font-weight:700}
+  .qr{background:#fff;padding:16px;border-radius:16px;width:min(70vw,420px);box-shadow:0 10px 40px rgba(0,0,0,.4)}
+  .qr svg{display:block;width:100%;height:auto}
+  .url{font-size:16px;color:#38bdf8;word-break:break-all;text-align:center}
+  .tip{font-size:13px;color:#94a3b8;text-align:center;line-height:1.7}
+</style></head><body>
+<h1>📱 用手机相机扫码打开</h1>
+<div class="qr">${svg}</div>
+<div class="url">${target}</div>
+<div class="tip">手机需与本机在同一 Wi-Fi；若打不开请检查 Windows 防火墙是否放行 Node.js<br>
+<span style="opacity:.7">页面地址：/__qr?url=http://自定义地址</span></div>
+</body></html>`);
+      log(req.method, req.url, 200, Date.now() - t0);
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('二维码生成失败: ' + e.message);
+      log(req.method, req.url, 500, Date.now() - t0);
+    }
+    return;
+  }
 
   // ---- /api/* 代理 ----
   const m = url.match(/^\/api\/(\w+)$/);
@@ -118,18 +156,37 @@ server.on('error', (e) => {
 
 server.listen(PORT, () => {
   const lan = lanURLs(PORT);
+  const mobileURL = lan[0] || `http://localhost:${PORT}`;
   console.log('');
-  console.log('┌──────────────────────────────────────────────────────┐');
-  console.log(`│  📈 FundWatch 本地调试服务器                          │`);
-  console.log(`│  本机   http://localhost:${PORT}                        │`);
-  for (const u of lan) console.log(`│  局域网 ${u}${' '.repeat(Math.max(1, 13 - u.length))}│`);
-  console.log(`│  静态   index.html（禁缓存，改完刷新即可）             │`);
-  console.log(`│  API    /api/search /api/nav /api/estimate            │`);
-  console.log(`│  健康   /api/health                                    │`);
-  console.log('│  调试   浏览器 F12 → Console/Network 看请求与报错      │');
-  console.log('└──────────────────────────────────────────────────────┘');
+  console.log('┌──────────────────────────────────────────────────────────┐');
+  console.log(`│  📈 FundWatch 本地调试服务器                              │`);
+  console.log(`│  本机   http://localhost:${PORT}                            │`);
+  for (const u of lan) console.log(`│  局域网 ${u}${' '.repeat(Math.max(1, 17 - u.length))}│`);
+  console.log(`│  静态   index.html（禁缓存，改完刷新即可）                 │`);
+  console.log(`│  API    /api/search /api/nav /api/estimate /api/detail    │`);
+  console.log(`│  健康   /api/health                                        │`);
+  console.log('│  调试   浏览器 F12 → Console/Network 看请求与报错          │');
+  console.log('└──────────────────────────────────────────────────────────┘');
   console.log('');
-  if (lan.length) console.log(`📱 手机访问：确保手机与电脑在同一 Wi-Fi，用上面「局域网」地址打开`);
+
+  // 📱 手机扫码入口：终端二维码 + /__qr 网页大图
+  if (!NO_QR) {
+    if (lan.length) {
+      console.log('📱 手机扫码打开（确保手机与电脑在同一 Wi-Fi）：');
+      console.log('');
+      try {
+        console.log(toTerminal(mobileURL, { ecc: 'M' }));
+      } catch (e) {
+        console.log('  (二维码生成失败:', e.message, ')');
+      }
+      console.log('');
+    } else {
+      console.log('⚠️  未检测到局域网 IPv4 地址，手机可能无法访问（检查网络连接）');
+    }
+    console.log(`   手机地址：${mobileURL}`);
+    console.log(`   电脑上打开 http://localhost:${PORT}/__qr 可看到放大版二维码`);
+    console.log('');
+  }
   if (OPEN) openBrowser(`http://localhost:${PORT}`);
 });
 
