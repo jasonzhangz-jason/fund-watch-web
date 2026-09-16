@@ -1,0 +1,15 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "version": 2,
+  "cleanUrls": true,
+  "buildCommand": "pnpm build",
+  "outputDirectory": "dist",
+  "installCommand": "pnpm install",
+  "functions": {
+    "api/**/*.js": {
+      "runtime": "nodejs22.x",
+      "maxDuration": 15,
+      "memory": 1024
+    }
+  }
+}

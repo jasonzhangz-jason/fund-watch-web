@@ -1,0 +1,153 @@
+@import 'tailwindcss';
+
+/* =====================================================================
+   基金助手 设计令牌（取自截图像素取色，见 基金助手-UI提示词/README.md）
+   Tailwind v4：@theme 中的 --color-* 会自动生成 bg-/text-/border- 工具类
+   ===================================================================== */
+@theme {
+  /* 主色系 */
+  --color-primary: #1977ff;
+  --color-primary-soft: #9dc4fd; /* 禁用态主按钮 */
+  --color-primary-tint: #e8f1ff; /* 「已更新」标签底 */
+  --color-hero-from: #249ffd; /* 详情页 Hero 渐变起点 */
+  --color-hero-to: #1879fe; /* 详情页 Hero 渐变终点 */
+  --color-list-hero-from: #d8e6ff; /* 列表页头图渐变起点 */
+  --color-list-hero-to: #f5f6fa; /* 列表页头图渐变终点 */
+
+  /* 涨跌语义色（A 股：红涨绿跌） */
+  --color-up: #e8303c;
+  --color-down: #1c9574;
+
+  /* 中性色 */
+  --color-page: #f5f6fa;
+  --color-field: #f9f9f9;
+  --color-ink: #1f1f1f;
+  --color-ink-2: #8a8f99;
+  --color-ink-3: #b0b6c0;
+  --color-line: #f0f1f5;
+  --color-line-2: #eef0f4;
+
+  /* 危险/删除 */
+  --color-danger: #e8303c;
+  --color-danger-soft-line: #f5c2c4;
+  --color-danger-soft-text: #e8a0a4;
+
+  /* 遮罩 */
+  --color-mask: rgb(0 0 0 / 0.5);
+
+  --font-sans: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', ui-sans-serif, system-ui, sans-serif;
+
+  --radius-card: 10px;
+  --radius-sheet: 14px;
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.04);
+  --shadow-pop: 0 4px 16px rgb(0 0 0 / 0.12);
+  --shadow-modal: 0 8px 24px rgb(0 0 0 / 0.18);
+  --shadow-expand: 0 2px 8px rgb(0 0 0 / 0.06);
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    color: var(--color-ink);
+    background: #0b1220; /* 桌面端的手机外框背景 */
+    -webkit-font-smoothing: antialiased;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    overflow: hidden;
+  }
+
+  button {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  input {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: 0;
+    outline: none;
+  }
+
+  /* 数字统一使用等宽字形，避免跳动（金融界面观感） */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+}
+
+@layer utilities {
+  /* 列表滚动区：隐藏滚动条，保留惯性滚动 */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* iOS 风格安全区 */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+
+/* 弹窗/浮层动效 */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.anim-fade {
+  animation: fade-in 0.16s ease-out both;
+}
+.anim-pop {
+  animation: pop-in 0.14s ease-out both;
+}
+.anim-sheet {
+  animation: sheet-in 0.18s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

@@ -1,0 +1,10 @@
+# pnpm 11 起不再读取 package.json 的 "pnpm" 字段，设置统一放在本文件。
+#
+# 1) minimumReleaseAge：不限制依赖"发布时长"
+# 2) overrides：把 rolldown 固定到 1.2.8
+#    —— vite 8.3.0 的依赖范围会解析到当时最新的 rolldown 1.2.9（发布不足 1 天），
+#       而 DSH 环境会对锁文件做"最小发布时长"供应链校验并拒绝它；
+#       1.2.8 已发布超过 24 小时，可稳定通过校验（构建能力一致）。
+minimumReleaseAge: 0
+overrides:
+  rolldown: 1.2.8

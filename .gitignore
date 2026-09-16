@@ -1,0 +1,17 @@
+# 依赖与构建
+node_modules/
+.vercel/
+dist/
+.vite-temp/
+
+# 本地 SQLite 数据库（含账号与自选数据，切勿提交）
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# 自检截图（可用 pnpm shoot 重新生成）与日志
+shots/
+*.log
+.DS_Store
+Thumbs.db
