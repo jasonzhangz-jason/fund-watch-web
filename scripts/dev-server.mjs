@@ -27,7 +27,7 @@ const handlers = {
 // 账号与自选（SQLite，与 Vercel 函数共用同一套实现）
 const authLib = require('../server/auth.cjs');
 const accountHandlers = require('../server/handlers.cjs');
-const { getDbPath } = require('../server/db.cjs');
+const { getDbPath, isPersistent, dbInfo, closeDb } = require('../server/db.cjs');
 
 function readJsonBody(req) {
   return new Promise((resolve) => {
@@ -151,8 +151,10 @@ const server = http.createServer(async (req, res) => {
   const m = url.match(/^\/api\/(\w+)$/);
   if (m) {
     if (m[1] === 'health') {
+      let db = null;
+      try { db = dbInfo(); } catch { /* 数据库尚未初始化 */ }
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, service: 'fund-watch-web', time: new Date().toISOString() }));
+      res.end(JSON.stringify({ ok: true, service: 'fund-watch-web', time: new Date().toISOString(), db }));
       log(req.method, req.url, 200, Date.now() - t0);
       return;
     }
@@ -211,25 +213,36 @@ function lanURLs(port) {
 server.on('error', (e) => {
   if (e.code === 'EADDRINUSE') {
     console.error(`\n❌ 端口 ${PORT} 已被占用。可能是已有 FundWatch 服务器在运行，或换个端口：\n   PORT=9000 node scripts/dev-server.mjs\n`);
-    process.exit(1);
-  }
+    process.exit(1);  }
   throw e;
 });
 
 server.listen(PORT, () => {
   const lan = lanURLs(PORT);
   const mobileURL = lan[0] || `http://localhost:${PORT}`;
+  const dbPath = getDbPath();
+  const persist = isPersistent();
+  let info = null;
+  try { info = dbInfo(); } catch { /* 忽略 */ }
+
   console.log('');
   console.log('┌──────────────────────────────────────────────────────────┐');
   console.log(`│  📈 FundWatch 本地调试服务器                              │`);
   console.log(`│  本机   http://localhost:${PORT}                            │`);
   for (const u of lan) console.log(`│  局域网 ${u}${' '.repeat(Math.max(1, 17 - u.length))}│`);
   console.log(`│  静态   index.html（禁缓存，改完刷新即可）                 │`);
-  console.log(`│  数据   SQLite: ${getDbPath().slice(-42).padEnd(42)}│`);
   console.log(`│  API    /api/search /api/nav /api/estimate /api/detail    │`);
   console.log(`│  账号   /api/auth/*  /api/watchlist                       │`);
   console.log('│  调试   浏览器 F12 → Console/Network 看请求与报错          │');
   console.log('└──────────────────────────────────────────────────────────┘');
+  console.log('');
+  console.log(`💾 数据库：${dbPath}`);
+  console.log(`   ${persist ? '✅ 持久化位置（重启不丢数据）' : '⚠️  临时位置（重启会丢数据！请设置 DB_PATH）'}`);
+  if (info) {
+    console.log(`   当前数据：用户 ${info.users}（管理员 ${info.admins}）· 自选 ${info.watchlistItems} 条 · 活跃会话 ${info.activeSessions}`);
+    console.log(`   文件大小：主库 ${(info.fileSize / 1024).toFixed(1)} KB · WAL ${(info.walSize / 1024).toFixed(1)} KB`);
+  }
+  console.log(`   ⓘ 已启用 WAL 自动合并（checkpoint），单个 .db 文件即含全部数据`);
   console.log('');
 
   // 📱 手机扫码入口：终端二维码 + /__qr 网页大图
@@ -252,6 +265,22 @@ server.listen(PORT, () => {
   }
   if (OPEN) openBrowser(`http://localhost:${PORT}`);
 });
+
+// ---- 优雅退出：checkpoint 落盘并关闭数据库，避免数据停留在 WAL 边车文件 ----
+let closing = false;
+function shutdown(signal) {
+  if (closing) return;
+  closing = true;
+  console.log(`\n📦 收到 ${signal}，正在把数据落盘（WAL checkpoint）…`);
+  try { closeDb(); } catch (e) { console.error('关闭数据库失败:', e.message); }
+  server.close(() => {
+    console.log('✅ 已安全退出，数据已持久化');
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(0), 1500).unref();   // 兜底
+}
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 function openBrowser(target) {
   const cmd = process.platform === 'win32' ? 'cmd' : process.platform === 'darwin' ? 'open' : 'xdg-open';

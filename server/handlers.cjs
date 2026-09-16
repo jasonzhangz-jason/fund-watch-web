@@ -2,10 +2,17 @@
 // 统一出入参：handleX({ body, cookies, query }) -> { status, headers, body }
 'use strict';
 const auth = require('./auth.cjs');
-const { getDb } = require('./db.cjs');
+const { getDb, checkpoint } = require('./db.cjs');
 
 // 启动时确保内置管理员（root/root）已写入 SQLite
 auth.ensureAdminSeed();
+
+/**
+ * 写操作后立即把 WAL 合并回主库文件。
+ * 这样即使进程被强杀（Windows 下 SIGTERM 即强制终止）或只保留单个 .db 文件，
+ * 已提交的数据也完整地存在于主库中——重启不覆盖、不丢失。
+ */
+const commit = () => { try { checkpoint(); } catch { /* 忽略 */ } };
 
 const ok = (body, headers = {}) => ({ status: 200, headers, body: { ok: true, ...body } });
 const err = (status, error) => ({ status, headers: {}, body: { ok: false, error } });
@@ -24,6 +31,7 @@ function register({ body, cookies = {} }) {
   if (created.error) return err(409, created.error);
 
   const { token } = auth.createSession(created.id);
+  commit();
   return ok({ user: auth.publicUser(created) }, { 'Set-Cookie': auth.sessionCookie(token) });
 }
 
@@ -37,11 +45,13 @@ function login({ body }) {
     return err(401, '用户名或密码不正确');
   }
   const { token } = auth.createSession(user.id);
+  commit();
   return ok({ user: auth.publicUser(user) }, { 'Set-Cookie': auth.sessionCookie(token) });
 }
 
 function logout({ cookies = {} }) {
   auth.destroySession(cookies[auth.SESSION_COOKIE]);
+  commit();
   return ok({ user: null }, { 'Set-Cookie': auth.clearCookie() });
 }
 
@@ -72,6 +82,7 @@ function addWatchlist({ cookies = {}, body }) {
     .prepare(`INSERT INTO watchlist (user_id, code, name, created_at) VALUES (?, ?, ?, ?)
               ON CONFLICT(user_id, code) DO UPDATE SET name = excluded.name`)
     .run(user.id, code, name, new Date().toISOString());
+  commit();
   return ok({ code, name });
 }
 
@@ -82,6 +93,7 @@ function removeWatchlist({ cookies = {}, query = {} }) {
   const invalid = auth.validateFundCode(code);
   if (invalid) return err(400, invalid);
   const info = getDb().prepare('DELETE FROM watchlist WHERE user_id = ? AND code = ?').run(user.id, code);
+  commit();
   return ok({ code, removed: Number(info.changes) });
 }
 
@@ -103,6 +115,7 @@ function syncWatchlist({ cookies = {}, body }) {
     stmt.run(user.id, code, name, now);
     n++;
   }
+  commit();
   return ok({ synced: n });
 }
 
@@ -183,6 +196,7 @@ function adminDeleteUser({ cookies = {}, query = {} }) {
   if (auth.isAdmin(target)) return err(400, '不能删除管理员账号');
   if (target.id === guard.user.id) return err(400, '不能删除当前登录账号');
   getDb().prepare('DELETE FROM users WHERE id = ?').run(target.id);
+  commit();
   return ok({ deleted: target.id, username: target.username });
 }
 
@@ -196,6 +210,7 @@ function adminResetPassword({ cookies = {}, query = {}, body }) {
   const invalid = auth.validateCredentials(target.username, password);
   if (invalid) return err(400, invalid);
   auth.changePassword(target.id, password);
+  commit();
   return ok({ id: target.id, username: target.username, reset: true });
 }
 

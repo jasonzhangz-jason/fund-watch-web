@@ -1,36 +1,76 @@
 // SQLite 数据层（Node 内置 node:sqlite，无需任何 npm 依赖）
 // 表：users（用户）/ sessions（登录会话）/ watchlist（自选基金）
+//
+// 持久化保障（重启不丢数据）：
+//  1) 路径优先「项目内 data/ 目录」，且**实际探测可写性**——不再因为 VERCEL 环境变量就静默落到 /tmp
+//  2) 打开连接时执行 WAL checkpoint(TRUNCATE)，把历史 WAL 合并回主库文件，
+//     这样即使只剩一个 .db 文件（WAL/SHM 边车丢失）也不会丢数据
+//  3) 提供 closeDb()：进程优雅退出时 checkpoint 并关闭，WAL 边车被自动清理
 'use strict';
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 
 let db = null;
+let dbPath = null;
+let persistent = false;
 
-/** 解析数据库文件路径：
- *  - DB_PATH 环境变量优先
- *  - Vercel 等只读文件系统环境 → /tmp（注意：数据是临时的，重启/换实例即丢失）
- *  - 本地开发 → <项目根>/data/fundwatch.db（持久化）
+const PROJECT_ROOT = path.resolve(__dirname, '..');
+
+/** 探测目录是否可写（真实写入一个临时文件） */
+function isWritableDir(dir) {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const probe = path.join(dir, `.write-probe-${process.pid}`);
+    fs.writeFileSync(probe, 'ok');
+    fs.unlinkSync(probe);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 解析数据库文件路径（优先级）：
+ *  1. 环境变量 DB_PATH（显式指定，生产环境应指向持久化卷）
+ *  2. 项目内 <root>/data/fundwatch.db（本地开发默认，持久）
+ *     —— 只有在该目录**不可写**时才回退临时目录，并打印醒目警告
  */
 function resolveDbPath() {
-  if (process.env.DB_PATH) return process.env.DB_PATH;
-  if (process.env.VERCEL) return '/tmp/fundwatch.db';
-  const root = path.resolve(__dirname, '..');
-  return path.join(root, 'data', 'fundwatch.db');
+  if (process.env.DB_PATH) return { file: path.resolve(process.env.DB_PATH), persistent: true, reason: 'DB_PATH' };
+
+  const local = path.join(PROJECT_ROOT, 'data', 'fundwatch.db');
+  if (isWritableDir(path.dirname(local))) return { file: local, persistent: true, reason: '项目 data/ 目录' };
+
+  // 项目目录只读（如 Vercel 生产环境未配置 DB_PATH）→ 只能临时存储
+  const tmp = path.join(os.tmpdir(), 'fundwatch.db');
+  return { file: tmp, persistent: false, reason: '项目目录不可写（临时回退）' };
 }
 
 function getDb() {
   if (db) return db;
-  const file = resolveDbPath();
-  if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true });
-  db = new DatabaseSync(file);
+  const resolved = resolveDbPath();
+  dbPath = resolved.file;
+  persistent = resolved.persistent;
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+
+  db = new DatabaseSync(dbPath);
   db.exec('PRAGMA journal_mode = WAL;');
+  db.exec('PRAGMA synchronous = NORMAL;');
   db.exec('PRAGMA foreign_keys = ON;');
   db.exec('PRAGMA busy_timeout = 5000;');
+  db.exec('PRAGMA wal_autocheckpoint = 32;');   // WAL 超过 ~128KB 自动合并回主库
   migrate(db);
-  if (process.env.VERCEL && !process.env.DB_PATH) {
-    console.warn('[db] 警告：运行在 Vercel 上，SQLite 使用 /tmp（临时存储，实例重启后数据丢失）。' +
-      '生产环境请设置 DB_PATH 指向持久化卷，或改用托管 SQLite（如 Turso）。');
+
+  // 关键：把历史 WAL 合并回主库文件，确保单个 .db 文件即包含全部数据
+  try { db.exec('PRAGMA wal_checkpoint(TRUNCATE);'); } catch { /* 忽略 */ }
+
+  if (!persistent) {
+    console.warn(
+      `[db] ⚠️ 当前使用临时数据库 ${dbPath}（${resolved.reason}），**服务重启后数据会丢失**。\n` +
+      '      请设置 DB_PATH 指向持久化目录，例如：DB_PATH=/var/lib/fundwatch/fundwatch.db'
+    );
   }
   return db;
 }
@@ -78,7 +118,60 @@ function purgeExpiredSessions() {
 }
 
 function getDbPath() {
-  return resolveDbPath();
+  if (!dbPath) getDb();
+  return dbPath;
 }
 
-module.exports = { getDb, getDbPath, purgeExpiredSessions };
+/** 当前数据库是否位于持久化位置 */
+function isPersistent() {
+  if (dbPath === null) getDb();
+  return persistent;
+}
+
+/** 库内数据量概览（用于健康检查 / 运维自检） */
+function dbInfo() {
+  const d = getDb();
+  const n = (sql, ...args) => Number(Object.values(d.prepare(sql).get(...args))[0] || 0);
+  const fileSize = (() => { try { return fs.statSync(dbPath).size; } catch { return 0; } })();
+  const walPath = `${dbPath}-wal`;
+  const walSize = (() => { try { return fs.statSync(walPath).size; } catch { return 0; } })();
+  return {
+    path: dbPath,
+    persistent,
+    fileSize,
+    walSize,
+    users: n('SELECT COUNT(*) AS n FROM users'),
+    admins: n("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'"),
+    watchlistItems: n('SELECT COUNT(*) AS n FROM watchlist'),
+    activeSessions: n('SELECT COUNT(*) AS n FROM sessions WHERE expires_at > ?', new Date().toISOString()),
+  };
+}
+
+/** 把 WAL 合并回主库（单文件即可完整备份/迁移） */
+function checkpoint() {
+  if (!db) return;
+  try { db.exec('PRAGMA wal_checkpoint(TRUNCATE);'); } catch { /* 忽略 */ }
+}
+
+/** 生成一致性快照备份（SQLite VACUUM INTO，等价于在线备份） */
+function backupTo(target) {
+  const d = getDb();
+  const dest = path.resolve(target);
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  if (fs.existsSync(dest)) fs.unlinkSync(dest);
+  d.exec(`VACUUM INTO '${dest.replace(/'/g, "''")}'`);
+  return dest;
+}
+
+/** 优雅关闭：checkpoint 后 close，WAL/SHM 边车会被清理，数据全部落入 .db */
+function closeDb() {
+  if (!db) return;
+  try { db.exec('PRAGMA wal_checkpoint(TRUNCATE);'); } catch { /* 忽略 */ }
+  try { db.close(); } catch { /* 忽略 */ }
+  db = null;
+}
+
+module.exports = {
+  getDb, getDbPath, isPersistent, purgeExpiredSessions,
+  dbInfo, checkpoint, backupTo, closeDb,
+};

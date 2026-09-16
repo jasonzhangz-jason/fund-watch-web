@@ -4,7 +4,7 @@
 
 | 维度 | 说明 |
 |---|---|
-| **数据存储** | Node 内置 `node:sqlite`（无需任何数据库服务），**自选只存账号，不用浏览器本地存储** |
+| **数据存储** | Node 内置 `node:sqlite`（无需任何数据库服务），**自选只存账号，不用浏览器本地存储**；WAL + 三重 checkpoint 保障**重启不丢数据** |
 | **运行时依赖** | **零 npm 运行时依赖**：SQLite 用 `node:sqlite`，密码/会话用 `node:crypto`，开发服务器自研轻量实现（仅 `vercel` CLI 为部署可选依赖） |
 | **Node 版本** | ≥ 22.5（`node:sqlite` 要求），已在 `package.json` / `vercel.json` 声明 |
 | **前端** | 单文件 `index.html`（原生 JS + Canvas，无构建步骤） |
@@ -97,12 +97,42 @@ npm run dev          # 启动本地服务器 → http://localhost:8787（自动�
 - 未登录时：自选页显示「🔒 自选基金保存在账号中，登录后即可使用」+ 登录按钮；点「加入自选」自动弹登录框；直接调用 `/api/watchlist` 返回 **401**
 - 旧版本遗留的本地键 `fundWatch:favs` 会在页面加载时**一次性删除**（只删不写，全站唯一一处 localStorage 调用就是这行删除）
 
-### 数据库位置（`DB_PATH` 可覆盖）
+### 数据库位置与持久化（重启不覆盖）
+路径解析（`server/db.cjs`）：
+1. **环境变量 `DB_PATH`**（显式指定，生产环境应指向持久化卷/磁盘）
+2. **项目内 `<root>/data/fundwatch.db`**（本地默认）——**会真实探测目录可写性**（写入探针文件），可写就用它
+3. 仅当项目目录**不可写**时才回退系统临时目录，并在启动横幅与日志中打印**醒目警告**
+
 | 环境 | 路径 | 持久性 |
 |---|---|---|
-| 本地开发 | `<项目>/data/fundwatch.db` | ✅ 持久（已 `.gitignore`） |
-| 环境变量 `DB_PATH` | 指定路径 | ✅ 取决于挂载卷（推荐生产使用） |
-| Vercel 默认 | `/tmp/fundwatch.db` | ⚠️ **临时**，实例重启即丢失（仅演示） |
+| 本地（`npm run dev`） | `<项目>/data/fundwatch.db` | ✅ 持久（已 `.gitignore`） |
+| `vercel dev`（本地） | `<项目>/data/fundwatch.db` | ✅ 持久（项目目录可写，**不会再落到 /tmp**） |
+| 生产（设了 `DB_PATH`） | 你指定的路径 | ✅ 持久 |
+| Vercel 生产（未设 `DB_PATH`） | `/tmp/fundwatch.db` | ⚠️ 临时，启动时会大声警告 |
+
+**三重落盘保障**（关键：Windows 下 `SIGTERM` 是强制终止，不能只依赖退出钩子）：
+1. **每次写操作后主动 checkpoint**（注册/登录/登出/增删自选/后台删改）→ 数据立刻合并进主库文件
+2. **服务启动时 checkpoint** → 兜住任何残留 WAL，重启后主库即完整
+3. **优雅退出时 checkpoint 并 close**（Ctrl+C / SIGINT）→ 清理 `-wal`/`-shm` 边车文件
+4. 另设 `PRAGMA wal_autocheckpoint=32`（WAL > ~128KB 自动合并）
+
+因此**只保留单个 `fundwatch.db` 文件（丢掉 WAL/SHM）也不会丢数据**，可直接拷贝迁移。
+
+### 数据库运维命令
+```bash
+npm run db:info         # 查看路径、是否持久化、用户/自选/会话数量、主库与 WAL 大小
+npm run db:backup       # 生成一致性快照 → data/backups/fundwatch-<时间>.db（VACUUM INTO，服务运行中也安全）
+npm run db:checkpoint   # 手动把 WAL 合并回主库（单文件即完整）
+npm run test:persistence# 持久化专项测试（重启/崩溃/单文件迁移 共 11 项断言）
+```
+- **恢复**：停服后用备份文件覆盖 `DB_PATH` 指向的数据库文件即可（已验证备份可直接启动使用）
+- **建议**：生产环境给 `db:backup` 挂个定时任务（如每天 2:00），并把备份同步到另一块盘/对象存储
+
+**自检**：`GET /api/health` 会返回数据库信息（路径、是否持久化、数据量、文件大小），一眼确认数据落在哪里：
+```json
+{ "ok": true, "db": { "path": "…/data/fundwatch.db", "persistent": true,
+  "fileSize": 40960, "walSize": 0, "users": 3, "admins": 1, "watchlistItems": 12, "activeSessions": 2 } }
+```
 
 ### 安全设计
 - **密码**：`node:crypto` scrypt + 每用户随机 16 字节盐，`timingSafeEqual` 比对防时序攻击，**不存明文**
@@ -217,6 +247,7 @@ PORT=9000 node scripts/dev-server.mjs        # 自定义端口
 | 命令 | 覆盖内容 | 规模 |
 |---|---|---|
 | `npm run test:responsive` | **多端自适应**：PC 1920/1366、iPad、iPhone 14/SE、Android、小屏安卓、横屏 iPhone + 旋转重绘 + 未登录无本地存储 | **76 项断言 / 8 种设备** ✅ |
+| `npm run test:persistence` | **持久化**：写后 WAL 合并、强制终止后主库完整、重启数据仍在、**只留单个 .db 也能完整恢复**、崩溃重启可登录 | **11 项断言** ✅ |
 | `npm run test:admin` | **后台**：root 登录、普通用户 403、未登录 401、统计、用户列表、自选明细、搜索、重置密码（旧会话失效）、拒删管理员、删除级联、敏感字段不泄露 | **27 项断言** ✅ |
 | `npm run test:auth` | **账号/自选**：注册校验、重复名 409、增删/批量导入、未登录 401、错误密码、**重启后数据持久化** | **20 项断言** ✅ |
 | `npm run test:auth:ui` | **账号 UI**：注册→加自选→刷新保持→退出（Puppeteer） | **14 项断言** ✅ |
@@ -329,12 +360,37 @@ fund-watch-web/
 ├── scripts/
 │   ├── dev-server.mjs       # 本地调试服务器（静态+API+SQLite+扫码）
 │   ├── qr.mjs               # 零依赖 QR 编码器（矩阵/终端/SVG）
+│   ├── db-tool.mjs          # 数据库运维（info / backup / checkpoint）
 │   ├── test-api.mjs  test-auth.mjs  test-admin.mjs
+│   ├── test-persistence.mjs # 持久化专项（重启/崩溃/单文件迁移）
 │   ├── smoke-auth-ui.cjs  smoke-admin-ui.cjs
 │   ├── smoke-test.cjs  smoke-mobile.cjs  smoke-responsive.cjs
 │   └── qr-verify.mjs  qr-decode-test.cjs  qr-e2e-test.cjs
 ├── data/fundwatch.db        # 本地 SQLite（自动创建，已忽略）
 └── README.md
+```
+
+### 常用命令一览
+```bash
+# 启动
+npm run dev / dev:watch / dev:open / dev:no-qr      # 本地调试服务器（--watch 热重载 / --open 开浏览器 / --no-qr 不打码）
+
+# 数据库运维
+npm run db:info        # 库路径 · 是否持久化 · 数据量 · 文件大小
+npm run db:backup      # 一致性备份到 data/backups/
+npm run db:checkpoint  # 手动合并 WAL 到主库
+
+# 测试（全部本地可跑）
+npm run test:persistence  # 持久化：重启/崩溃/单文件迁移（11 项）
+npm run test:admin        # 后台 API（27 项）      npm run test:admin:ui   # 后台 UI（14 项）
+npm run test:auth         # 账号/自选（20 项）      npm run test:auth:ui    # 账号 UI（14 项）
+npm run test:responsive   # 多端自适应（76 项 / 8 设备）
+npm run test:api          # 数据接口回归
+npm run test:e2e          # 数据端到端            npm run test:mobile     # 手机 + 详情代理
+npm run test:qr           # QR 与权威库逐位比对    npm run test:qr:decode  # jsQR 真实解码
+
+# 部署
+npm run deploy         # vercel deploy --prod
 ```
 
 ---
@@ -353,8 +409,17 @@ fund-watch-web/
 **Q：估值显示「净值(非盘中)」？**
 说明 `fundgz` 估值接口在当前网络不可达，已自动降级为最新历史净值；换网络或部署到香港区可拿到真实盘中估值。
 
+**Q：重启服务后数据会丢/被覆盖吗？**
+不会（已加固）。三重落盘保障：**每次写操作后 checkpoint** + **启动时 checkpoint** + 优雅退出时 checkpoint，另加 `wal_autocheckpoint`；实测强制终止（含 Windows 下 SIGTERM/崩溃）后重启，账号与自选均完整，**只保留单个 `fundwatch.db` 文件也能恢复**。用 `npm run db:info` 或 `GET /api/health` 可确认库路径与是否处于持久化位置。
+
+**Q：怎么备份/迁移数据？**
+`npm run db:backup` 生成一致性快照（服务运行中也安全），停服后用该文件覆盖 `DB_PATH` 指向的库即可恢复；因为是单文件库，直接拷贝 `data/fundwatch.db` 到新机器也能用。
+
+**Q：数据库在哪？能改位置吗？**
+默认 `<项目>/data/fundwatch.db`；用 `DB_PATH=/your/path/fundwatch.db` 指定其他位置（生产环境推荐指向持久化卷）。启动横幅会打印**完整路径**与「✅ 持久化 / ⚠️ 临时」状态。
+
 **Q：部署到 Vercel 后数据丢了？**
-Vercel 函数文件系统只读，SQLite 落在 `/tmp` 实例重启即清空。请按第八节选择「独立后端 + `DB_PATH`」或托管 SQLite。
+Vercel 生产环境文件系统只读，未设 `DB_PATH` 时只能落 `/tmp`，实例重启即清空（启动时会大声警告）。请按第八节选择「独立后端 + `DB_PATH`」或托管 SQLite（Turso/libSQL）。
 
 **Q：端口被占用？**
 `PORT=9000 node scripts/dev-server.mjs` 换端口，或先结束占用 8787 的进程。
@@ -372,6 +437,7 @@ Vercel 函数文件系统只读，SQLite 落在 `/tmp` 实例重启即清空。�
 | v1.1 | 零依赖本地调试服务器 + **终端扫码二维码**（自研 QR 编码器）+ 移动端基础适配 |
 | v1.2 | **账号系统**（scrypt 密码哈希 + HttpOnly 会话 Cookie）+ **自选 SQLite 持久化** + **后台管理**（`root/root`、用户与自选查看、重置密码、删除用户） |
 | v1.3 | **PC/Android/iOS/平板/横屏全端自适应** + **剔除浏览器本地存储**（自选只存账号）+ 旋转/缩放图表重绘 + 未登录引导登录 |
+| v1.4 | **持久化加固**：写后/启动/退出三重 WAL checkpoint、路径可写性探测（本地与 `vercel dev` 不再落 `/tmp`）、启动横幅显示完整库路径与持久化状态、`/api/health` 附带库信息、`db:info / db:backup / db:checkpoint` 运维命令 + 持久化专项测试 |
 
 ---
 
