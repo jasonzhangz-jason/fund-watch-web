@@ -104,6 +104,49 @@
   }
 }
 
+/* =====================================================================
+   手机外框（PhoneFrame）
+   移动端全屏铺满；桌面端居中显示 393×852 机身；
+   矮视口（横屏手机 / 小窗口）自动退化为全屏，避免固定机身高度裁掉底部 TabBar。
+   ===================================================================== */
+.phone-shell {
+  padding: 0;
+}
+.phone-frame {
+  width: 100%;
+  height: 100%;
+}
+
+@media (min-width: 768px) {
+  .phone-shell {
+    padding: 24px;
+  }
+  .phone-frame {
+    width: 393px;
+    height: min(852px, calc(100vh - 48px)); /* 旧浏览器回退 */
+    height: min(852px, calc(100dvh - 48px)); /* 移动端动态视口高度 */
+    border-radius: 44px;
+    box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+    outline: 1px solid rgb(255 255 255 / 0.1);
+    padding-top: 0;
+  }
+}
+
+/* 横屏手机等矮视口：取消机身装饰，直接铺满，保证 TabBar / 底部按钮可见 */
+@media (max-height: 600px) {
+  .phone-shell {
+    padding: 0;
+  }
+  .phone-frame {
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+    box-shadow: none;
+    outline: none;
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+}
+
 /* 弹窗/浮层动效 */
 @keyframes fade-in {
   from {

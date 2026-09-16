@@ -301,13 +301,14 @@ function Metric({ label, value, tone: t }: { label: string; value: string; tone?
     <div className="flex min-w-0 flex-col items-center gap-1.5">
       <span
         className={[
-          'tnum whitespace-nowrap text-[28px] font-bold leading-none tracking-tight',
+          // 窄屏（320px 等）自动缩小，避免三列指标互相挤压溢出
+          'tnum whitespace-nowrap text-[clamp(19px,6.4vw,28px)] font-bold leading-none tracking-tight',
           t === undefined ? 'text-ink-3' : t >= 0 ? 'text-up' : 'text-down',
         ].join(' ')}
       >
         {value}
       </span>
-      <span className="whitespace-nowrap text-[11px] text-ink-2">{label}</span>
+      <span className="whitespace-nowrap text-[clamp(10px,2.9vw,11px)] text-ink-2">{label}</span>
     </div>
   );
 }

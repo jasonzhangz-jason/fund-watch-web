@@ -4,13 +4,13 @@ import { useNavigate } from 'react-router-dom';
 import { AuthSheet } from './AuthSheet';
 
 /* ============================ 设备外框 ============================ */
-/** 手机外框：桌面端居中显示 393×852 机身，移动端全屏铺满。
- *  - 顶部留出真实设备安全区（状态栏已不再模拟，交给系统）
- *  - 账号弹层挂在这里，保证它相对手机机身定位（而不是整个浏览器窗口） */
+/** 手机外框：桌面端居中显示 393×852 机身；矮视口（横屏手机 / 小窗口）自动退化为全屏铺满，
+ *  避免固定机身高度把底部 TabBar 裁掉（样式见 index.css 的 .phone-shell / .phone-frame）。
+ *  账号弹层挂在这里，保证它相对手机机身定位（而不是整个浏览器窗口）。 */
 export function PhoneFrame({ children }: { children: ReactNode }) {
   return (
-    <div className="flex h-full w-full items-center justify-center md:p-6">
-      <div className="relative flex h-full w-full flex-col overflow-hidden bg-page pt-[env(safe-area-inset-top,0px)] md:h-[852px] md:w-[393px] md:rounded-[44px] md:shadow-2xl md:ring-1 md:ring-white/10 md:pt-0">
+    <div className="phone-shell flex h-full w-full items-center justify-center">
+      <div className="phone-frame relative flex flex-col overflow-hidden bg-page pt-[env(safe-area-inset-top,0px)]">
         {children}
         <AuthSheet />
       </div>
