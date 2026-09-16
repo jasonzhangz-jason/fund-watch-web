@@ -3,12 +3,10 @@
   "version": 2,
   "cleanUrls": true,
   "functions": {
-    "api/*.js": {
+    "api/**/*.js": {
+      "runtime": "nodejs22.x",
       "maxDuration": 15,
       "memory": 1024
     }
-  },
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" }
-  ]
+  }
 }

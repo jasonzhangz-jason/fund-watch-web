@@ -24,6 +24,50 @@ const handlers = {
   estimate: require('../api/estimate.js'),
   detail: require('../api/detail.js'),
 };
+// 账号与自选（SQLite，与 Vercel 函数共用同一套实现）
+const authLib = require('../server/auth.cjs');
+const accountHandlers = require('../server/handlers.cjs');
+const { getDbPath } = require('../server/db.cjs');
+
+function readJsonBody(req) {
+  return new Promise((resolve) => {
+    let raw = '';
+    req.on('data', (c) => { raw += c; if (raw.length > 1e6) req.destroy(); });
+    req.on('end', () => { try { resolve(raw ? JSON.parse(raw) : {}); } catch { resolve({}); } });
+    req.on('error', () => resolve({}));
+  });
+}
+
+/** 账号/自选路由（本地服务器直接调用共享处理器） */
+async function routeAccount(req, url, query, cookies, body) {
+  const p = url;
+  if (p === '/api/auth/register' && req.method === 'POST') return accountHandlers.register({ body });
+  if (p === '/api/auth/login' && req.method === 'POST') return accountHandlers.login({ body });
+  if (p === '/api/auth/logout' && req.method === 'POST') return accountHandlers.logout({ cookies });
+  if (p === '/api/auth/me' && req.method === 'GET') return accountHandlers.me({ cookies });
+  if (p === '/api/watchlist' && req.method === 'GET') return accountHandlers.listWatchlist({ cookies });
+  if (p === '/api/watchlist' && req.method === 'POST') {
+    return body && body.mode === 'sync'
+      ? accountHandlers.syncWatchlist({ cookies, body })
+      : accountHandlers.addWatchlist({ cookies, body });
+  }
+  const m = p.match(/^\/api\/watchlist\/(\d{6})$/);
+  if (m && req.method === 'DELETE') return accountHandlers.removeWatchlist({ cookies, query: { code: m[1] } });
+
+  // 后台管理
+  if (p === '/api/admin/stats' && req.method === 'GET') return accountHandlers.adminStats({ cookies });
+  if (p === '/api/admin/users' && req.method === 'GET') return accountHandlers.adminUsers({ cookies, query });
+  const am = p.match(/^\/api\/admin\/users\/(\d+)$/);
+  if (am) {
+    const id = { id: am[1] };
+    if (req.method === 'GET') return accountHandlers.adminUserDetail({ cookies, query: id });
+    if (req.method === 'DELETE') return accountHandlers.adminDeleteUser({ cookies, query: id });
+    if (req.method === 'POST' && body && body.action === 'resetPassword') {
+      return accountHandlers.adminResetPassword({ cookies, query: id, body });
+    }
+  }
+  return { status: 404, headers: {}, body: { ok: false, error: '未知的账号接口' } };
+}
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.json': 'application/json; charset=utf-8',
@@ -80,6 +124,24 @@ const server = http.createServer(async (req, res) => {
     } catch (e) {
       res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
       res.end('二维码生成失败: ' + e.message);
+      log(req.method, req.url, 500, Date.now() - t0);
+    }
+    return;
+  }
+
+  // ---- 账号 / 自选 / 后台（SQLite 持久化）----
+  if (url.startsWith('/api/auth/') || url === '/api/watchlist' || url.startsWith('/api/watchlist/') || url.startsWith('/api/admin/')) {
+    const cookies = authLib.parseCookies(req.headers.cookie);
+    const body = ['POST', 'PUT', 'PATCH'].includes(req.method) ? await readJsonBody(req) : {};
+    try {
+      const r = await routeAccount(req, url, parseQuery(req.url), cookies, body);
+      res.writeHead(r.status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...(r.headers || {}) });
+      res.end(JSON.stringify(r.body));
+      log(req.method, req.url, r.status, Date.now() - t0);
+    } catch (e) {
+      console.error('💥 account api threw:', e);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: e.message }));
       log(req.method, req.url, 500, Date.now() - t0);
     }
     return;
@@ -163,8 +225,9 @@ server.listen(PORT, () => {
   console.log(`│  本机   http://localhost:${PORT}                            │`);
   for (const u of lan) console.log(`│  局域网 ${u}${' '.repeat(Math.max(1, 17 - u.length))}│`);
   console.log(`│  静态   index.html（禁缓存，改完刷新即可）                 │`);
+  console.log(`│  数据   SQLite: ${getDbPath().slice(-42).padEnd(42)}│`);
   console.log(`│  API    /api/search /api/nav /api/estimate /api/detail    │`);
-  console.log(`│  健康   /api/health                                        │`);
+  console.log(`│  账号   /api/auth/*  /api/watchlist                       │`);
   console.log('│  调试   浏览器 F12 → Console/Network 看请求与报错          │');
   console.log('└──────────────────────────────────────────────────────────┘');
   console.log('');

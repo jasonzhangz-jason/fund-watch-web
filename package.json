@@ -1,10 +1,10 @@
 {
   "name": "fund-watch-web",
-  "version": "1.0.0",
-  "description": "天天基金数据 Web UI：自选基金 + 盘中实时估值 + 多种数据查询（搜索/详情/净值走势）",
+  "version": "1.3.0",
+  "description": "天天基金数据 Web UI：账号登录 + 自选基金（SQLite，无本地存储）+ 后台管理 + 盘中实时估值 + 多端自适应",
   "private": true,
   "engines": {
-    "node": ">=18"
+    "node": ">=22.5.0"
   },
   "scripts": {
     "dev": "node scripts/dev-server.mjs",
@@ -13,8 +13,13 @@
     "dev:no-qr": "node scripts/dev-server.mjs --no-qr",
     "deploy": "vercel deploy --prod",
     "test:api": "node scripts/test-api.mjs",
+    "test:auth": "node scripts/test-auth.mjs",
+    "test:auth:ui": "node scripts/smoke-auth-ui.cjs",
+    "test:admin": "node scripts/test-admin.mjs",
+    "test:admin:ui": "node scripts/smoke-admin-ui.cjs",
     "test:e2e": "node scripts/smoke-test.cjs",
     "test:mobile": "node scripts/smoke-mobile.cjs",
+    "test:responsive": "node scripts/smoke-responsive.cjs",
     "test:qr": "node scripts/qr-verify.mjs",
     "test:qr:decode": "node scripts/qr-decode-test.cjs",
     "test:qr:e2e": "node scripts/qr-e2e-test.cjs"
