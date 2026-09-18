@@ -16,6 +16,12 @@ const commit = () => {
   }
 };
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+/** 持仓收益率 % = 持有收益 / 本金（本金 = 持有金额 - 持有收益）；本金 ≤ 0 时返回 null */
+const holdRate = (amount, profit) => {
+  const cost = (Number(amount) || 0) - (Number(profit) || 0);
+  if (!Number.isFinite(cost) || cost <= 0) return null;
+  return round2(((Number(profit) || 0) / cost) * 100);
+};
 const todayLocal = () => {
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
@@ -65,6 +71,8 @@ async function buildPortfolio(userId, opts = {}) {
       name: q.name || p.name,
       amount: round2(p.amount),
       profit: round2(p.profit),
+      /** 持仓收益率 % = 持有收益 / 本金（本金 = 持有金额 - 持有收益）；本金 ≤ 0 时无法计算 */
+      rate: holdRate(p.amount, p.profit),
       nav: q.nav ?? null,
       navDate: q.nav_date ?? null,
       dayChange,
@@ -198,4 +206,84 @@ function getSnapshot(userId, date) {
   };
 }
 
-module.exports = { buildPortfolio, getHistory, getPositionDaily, getSnapshot, todayLocal };
+/* ==================== 持仓穿透（Look-through） ==================== */
+/**
+ * 把用户持仓按各基金**前十大重仓股**穿透到个股：
+ *   个股穿透金额 = Σ(该基金持有金额 × 该股票占净值比例 / 100)
+ *   个股占账户比 = 穿透金额 / 账户资产 × 100%
+ * 同时给出覆盖比例（重仓股合计占净值的比重）——未披露/非股票型基金不计入并单独列出，
+ * 保证「穿透覆盖了多少钱」是诚实的，而不是假装 100%。
+ */
+async function buildLookthrough(userId, opts = {}) {
+  const positions = listPositions(userId);
+  const totalAmount = positions.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+
+  const fetched = await Promise.all(
+    positions.map(async (p) => ({ p, h: await market.getHoldings(p.code, { force: Boolean(opts.force) }) })),
+  );
+
+  const stocks = new Map();
+  const noData = [];
+  let coveredAmount = 0;
+  let date = null;
+  let quarter = null;
+  let stale = false;
+
+  for (const { p, h } of fetched) {
+    const items = (h && h.items) || [];
+    if (h && h.stale) stale = true;
+    if (!date && h && h.date) date = h.date;
+    if (!quarter && h && h.quarter) quarter = h.quarter;
+    if (!items.length) {
+      noData.push({ code: p.code, name: p.name, amount: round2(p.amount) });
+      continue;
+    }
+    for (const it of items) {
+      const weight = Number(it.weight) || 0;
+      const exposure = round2((Number(p.amount) || 0) * weight / 100);
+      coveredAmount += exposure;
+      const key = it.code;
+      const cur = stocks.get(key) || { code: it.code, name: it.name, amount: 0, funds: [] };
+      cur.amount = round2(cur.amount + exposure);
+      cur.funds.push({
+        code: p.code,
+        name: p.name,
+        /** 该股票在这只基金里的占净值比例（%） */
+        weight: round2(weight),
+        /** 该基金为这只股票贡献的穿透金额（元） */
+        amount: exposure,
+        change: typeof it.change === 'number' ? it.change : null,
+      });
+      stocks.set(key, cur);
+    }
+  }
+
+  const items = [...stocks.values()]
+    .map((s) => ({
+      code: s.code,
+      name: s.name,
+      amount: s.amount,
+      ratio: totalAmount > 0 ? round2((s.amount / totalAmount) * 100) : 0,
+      fundCount: s.funds.length,
+      funds: s.funds.sort((a, b) => b.amount - a.amount),
+    }))
+    .sort((a, b) => b.amount - a.amount)
+    .map((s, i) => ({ ...s, rank: i + 1 }));
+
+  return {
+    totalAmount: round2(totalAmount),
+    coveredAmount: round2(coveredAmount),
+    /** 穿透覆盖比例 = 重仓股穿透金额 / 账户资产（非 100%，只覆盖前十大重仓） */
+    coverage: totalAmount > 0 ? round2((coveredAmount / totalAmount) * 100) : 0,
+    positionCount: positions.length,
+    stockCount: items.length,
+    date,
+    quarter,
+    stale,
+    noData,
+    items,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+module.exports = { buildPortfolio, getHistory, getPositionDaily, getSnapshot, buildLookthrough, todayLocal };

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ChevronRight, LogIn, LogOut, Shield, User as UserIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { PhoneFrame, TabBar } from '../components/chrome';
-import { Card, ChangeChip, StatusLine } from '../components/ui';
+import { Card, StatusLine } from '../components/ui';
 import { useAuth } from '../state/auth';
 import { fmtMoney, fmtMoneySigned, useStore } from '../state/store';
 import { marketHint, useMarketData } from '../lib/useMarketData';
@@ -158,7 +158,7 @@ export default function Mine() {
               />
             </div>
 
-            {/* 我的自选 / 我的持仓 入口 */}
+            {/* 我的自选 / 持仓穿透 入口（持仓明细不再在本页平铺展示） */}
             <div className="mt-2 px-3">
               <Card className="divide-y divide-line px-0">
                 <Entry
@@ -166,43 +166,17 @@ export default function Mine() {
                   hint={`${serverMode ? pf!.watchCount : watchItems.length} 只`}
                   onClick={() => navigate('/watchlist')}
                 />
-                <Entry label="我的持仓（明细）" hint={`${holdings.length} 只`} onClick={() => navigate('/edit')} last />
-              </Card>
-            </div>
-
-            {/* 持仓明细：我的单 */}
-            <div className="mt-3 px-3">
-              <Card className="px-4 py-3.5">
-                <h3 className="text-[16px] font-semibold text-ink">我的持仓明细</h3>
-                {holdings.length === 0 ? (
-                  <p className="py-6 text-center text-[13px] text-ink-3">暂无持仓，去「账本 → 添加持仓」</p>
-                ) : (
-                  <ul className="mt-2">
-                    {holdings.map((f, i) => {
-                      const change = f.dayChange;
-                      return (
-                        <li key={f.code}>
-                          <button
-                            type="button"
-                            onClick={() => navigate(`/fund/${f.code}`)}
-                            className="flex h-[54px] w-full items-center text-left active:opacity-70"
-                          >
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-[15px] font-medium text-ink">{f.name}</p>
-                              <p className="tnum mt-0.5 text-[12px] text-ink-2">
-                                ¥{fmtMoney(f.amount)} · 收益 {fmtMoneySigned(f.profit)}
-                              </p>
-                            </div>
-                            <span className="w-[76px] text-right">
-                              <ChangeChip value={change} className="scale-90" />
-                            </span>
-                          </button>
-                          {i < funds.length - 1 ? <div className="border-b border-line" /> : null}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
+                <Entry
+                  label="持仓穿透"
+                  hint="按重仓股穿透到个股"
+                  onClick={() => navigate('/lookthrough')}
+                />
+                <Entry
+                  label="基金相关性分析"
+                  hint="账本基金走势相似程度"
+                  onClick={() => navigate('/correlation')}
+                  last
+                />
               </Card>
             </div>
 
@@ -229,6 +203,7 @@ function Entry({ label, hint, onClick, last }: { label: string; hint: string; on
   return (
     <button
       type="button"
+      aria-label={label}
       onClick={onClick}
       className={['flex h-12 w-full items-center justify-between px-4 text-left active:bg-field', last ? '' : ''].join(' ')}
     >

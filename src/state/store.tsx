@@ -24,7 +24,7 @@ export type Fund = {
 };
 
 /** 列表排序键 */
-export type SortKey = 'dayProfit' | 'dayChange' | 'latestChange' | 'estChange';
+export type SortKey = 'dayProfit' | 'dayChange' | 'latestChange' | 'estChange' | 'rate';
 export type SortDir = 'desc' | 'asc';
 
 /** 数据来源：live=服务端实时，anonymous=未登录（不展示任何静态数据），error=接口失败 */
@@ -234,7 +234,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const sortFunds = useCallback<Store['sortFunds']>((list, key, dir) => {
     const factor = dir === 'desc' ? -1 : 1;
-    return [...list].sort((a, b) => (a[key] - b[key]) * factor);
+    /** 收益率需换算（收益 / 本金），其余键直接取自基金字段 */
+    const val = (f: Fund) => {
+      if (key === 'rate') {
+        const cost = f.amount - f.profit;
+        return cost > 0 ? f.profit / cost : null;
+      }
+      return f[key];
+    };
+    return [...list].sort((a, b) => {
+      const va = val(a);
+      const vb = val(b);
+      if (va === null && vb === null) return 0;
+      if (va === null) return 1;
+      if (vb === null) return -1;
+      return (va - vb) * factor;
+    });
   }, []);
 
   /* ---------------- 其他 ---------------- */

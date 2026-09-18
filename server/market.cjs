@@ -85,6 +85,36 @@ async function latestNavOf(code) {
   }
 }
 
+/* ==================== 净值历史（相关性分析的数据源） ==================== */
+/** 上游每页最多 20 条，历史净值变动慢，缓存 30 分钟 */
+const NAV_HISTORY_TTL_MS = 30 * 60 * 1000;
+const NAV_PAGE_SIZE = 20;
+const navHistoryCache = new Map();
+
+/**
+ * 取最近 need 个交易日的净值序列（自动翻页，按日期倒序返回）
+ * 用于相关性分析：需要 window+1 个净值点才能算出 window 个日收益率。
+ */
+async function navHistoryOf(code, need = 61, opts = {}) {
+  const hit = navHistoryCache.get(code);
+  if (!opts.force && hit && Date.now() - hit.at < NAV_HISTORY_TTL_MS && hit.value.length >= need) {
+    return hit.value;
+  }
+  const pages = Math.max(1, Math.ceil(need / NAV_PAGE_SIZE));
+  const items = [];
+  for (let p = 1; p <= pages; p += 1) {
+    try {
+      const { items: rows } = await navListOf(code, p, NAV_PAGE_SIZE);
+      items.push(...rows);
+      if (rows.length < NAV_PAGE_SIZE) break; // 已到最早一页
+    } catch {
+      break;
+    }
+  }
+  if (items.length) navHistoryCache.set(code, { at: Date.now(), value: items });
+  return items.length ? items : hit?.value || [];
+}
+
 /** 既有 /api/estimate 的单只结构（估值不可用时回落为最新净值信息） */
 async function estimateOf(code) {
   const gz = await gzOf(code);
@@ -210,6 +240,87 @@ function tradeDateOf(quotes) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
+/* ==================== 基金重仓股（持仓穿透的数据源） ==================== */
+const JJCC_URL = 'https://fundf10.eastmoney.com/FundArchivesDatas.aspx';
+const STOCK_QUOTE_URL = 'https://push2.eastmoney.com/api/qt/ulist.np/get';
+/** 重仓股为季度披露数据，缓存 30 分钟足够（穿透会对多只基金并发取数） */
+const HOLDINGS_TTL_MS = 30 * 60 * 1000;
+const holdingsCache = new Map();
+
+const stripTags = (html) => html.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
+const numOf = (s) => {
+  const v = parseFloat(String(s || '').replace(/[,%\s]/g, ''));
+  return Number.isFinite(v) ? v : null;
+};
+/** 交易所前缀：沪市 1，深市 0 */
+const marketOf = (code) => (/^(6|5|9)/.test(code) ? '1' : '0');
+
+/** 抓取并解析某只基金的前十大重仓股（含真实涨跌幅） */
+async function fetchHoldings(code) {
+  const r = await fetch(`${JJCC_URL}?type=jjcc&code=${code}&topline=10`, {
+    headers: { 'User-Agent': UA, Referer: `https://fundf10.eastmoney.com/ccmx_${code}.html` },
+    signal: AbortSignal.timeout(12000),
+  });
+  if (!r.ok) throw new Error(`upstream http ${r.status}`);
+  const html = await r.text();
+
+  const date = (html.match(/截止至：<font[^>]*>([\d-]+)<\/font>/) || [])[1] || null;
+  const quarter = (html.match(/(\d{4}年\d季度)股票投资明细/) || [])[1] || null;
+
+  const tbody = (html.match(/<tbody>([\s\S]*?)<\/tbody>/) || [])[1] || '';
+  const rows = [...tbody.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map((m) =>
+    [...m[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((c) => stripTags(c[1])),
+  );
+
+  const items = rows
+    .map((cells) => ({
+      code: cells[1] || '',
+      name: cells[2] || '',
+      weight: numOf(cells[6]), // 占净值比例 %
+      shares: numOf(cells[7]), // 持股数（万股）
+      marketValue: numOf(cells[8]), // 持仓市值（万元）
+      change: null,
+    }))
+    .filter((i) => /^\d{6}$/.test(i.code) && i.name);
+
+  if (items.length) {
+    try {
+      const secids = items.map((i) => `${marketOf(i.code)}.${i.code}`).join(',');
+      const qr = await fetch(`${STOCK_QUOTE_URL}?secids=${secids}&fields=f3,f12&fltt=2&invt=2`, {
+        headers: { 'User-Agent': UA, Referer: 'https://quote.eastmoney.com/' },
+        signal: AbortSignal.timeout(8000),
+      });
+      const qj = await qr.json();
+      const map = new Map((qj?.data?.diff || []).map((d) => [d.f12, d.f3]));
+      for (const i of items) {
+        const v = map.get(i.code);
+        i.change = typeof v === 'number' ? v : null;
+      }
+    } catch {
+      /* 行情失败不影响持仓明细 */
+    }
+  }
+
+  return { code, date, quarter, items };
+}
+
+/** 带缓存的重仓股查询；force=true 跳过缓存 */
+async function getHoldings(code, opts = {}) {
+  if (!isCode(code)) return { code, date: null, quarter: null, items: [] };
+  const ttl = opts.maxAgeMs ?? HOLDINGS_TTL_MS;
+  const hit = holdingsCache.get(code);
+  if (!opts.force && hit && Date.now() - hit.at < ttl) return hit.value;
+  try {
+    const value = await fetchHoldings(code);
+    holdingsCache.set(code, { at: Date.now(), value });
+    return value;
+  } catch (e) {
+    // 上游失败时退回旧缓存（比直接失败更有用），否则返回空
+    if (hit) return { ...hit.value, stale: true };
+    return { code, date: null, quarter: null, items: [], error: e.message };
+  }
+}
+
 module.exports = {
   gzOf,
   navListOf,
@@ -218,5 +329,9 @@ module.exports = {
   fetchQuote,
   getQuotes,
   tradeDateOf,
+  getHoldings,
+  navHistoryOf,
+  HOLDINGS_TTL_MS,
+  NAV_HISTORY_TTL_MS,
   CACHE_TTL_MS,
 };

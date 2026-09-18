@@ -157,8 +157,54 @@ const del = (u) => req(u, { method: 'DELETE' });
     const q3 = await get('/api/quotes?codes=161725&refresh=1');
     check('refresh=1 触发上游刷新（updated_at 变化）', q3.body.items[0].updated_at !== q1.body.items[0].updated_at);
 
+    /* ---------- 持仓穿透 ---------- */
+    console.log('\n【7】持仓穿透（按各基金前十大重仓股穿透到个股）');
+    const ltAnon = await fetch(`${BASE}/api/portfolio/lookthrough`);
+    check('未登录访问穿透被拒 (401)', ltAnon.status === 401, String(ltAnon.status));
+
+    const ltRes = await get('/api/portfolio/lookthrough');
+    const lt = ltRes.body.lookthrough;
+    check('穿透返回 200 且结构完整', ltRes.status === 200 && Boolean(lt), JSON.stringify(ltRes.body).slice(0, 120));
+    check(
+      '穿透含账户资产/穿透资产/覆盖率/股票数',
+      typeof lt.totalAmount === 'number' && typeof lt.coveredAmount === 'number' && typeof lt.coverage === 'number' && Array.isArray(lt.items),
+      JSON.stringify({ t: lt.totalAmount, c: lt.coveredAmount, cov: lt.coverage, n: lt.items.length }),
+    );
+    check('穿透覆盖了持仓基金（数据期可用）', lt.items.length > 0 && Boolean(lt.quarter), `${lt.items.length} 只个股 / ${lt.quarter}`);
+    check('覆盖比例 = 穿透资产 / 账户资产', Math.abs(lt.coverage - (lt.coveredAmount / lt.totalAmount) * 100) < 0.02, `${lt.coverage} vs ${(lt.coveredAmount / lt.totalAmount) * 100}`);
+
+    // 与持仓金额对齐：穿透资产 = Σ(持有金额 × 前十大重仓占净值比合计)
+    const pfNow = (await get('/api/portfolio')).body.portfolio;
+    const posSum = pfNow.items.reduce((s, i) => s + i.amount, 0);
+    check('穿透账户资产 = 账本账户资产', Math.abs(lt.totalAmount - posSum) < 0.02, `${lt.totalAmount} vs ${posSum}`);
+
+    const top = lt.items[0];
+    check('个股含名称/代码/金额/占比/涉及基金', top && top.name && top.code && typeof top.amount === 'number' && typeof top.ratio === 'number' && Array.isArray(top.funds), JSON.stringify(top).slice(0, 140));
+    const fundSum = Math.round(top.funds.reduce((s, f) => s + f.amount, 0) * 100) / 100;
+    check('个股金额 = Σ 各基金贡献金额', Math.abs(top.amount - fundSum) < 0.02, `${top.amount} vs ${fundSum}`);
+    check('占账户比 = 个股金额 / 账户资产', Math.abs(top.ratio - (top.amount / lt.totalAmount) * 100) < 0.02, `${top.ratio}`);
+    check(
+      '每只基金贡献 = 该基金持有金额 × 占净值比',
+      top.funds.every((f) => {
+        const pos = pfNow.items.find((i) => i.code === f.code);
+        return pos && Math.abs(f.amount - (pos.amount * f.weight) / 100) < 0.02;
+      }),
+      JSON.stringify(top.funds).slice(0, 160),
+    );
+    check('涉及基金按贡献金额降序', top.funds.every((f, i) => i === 0 || top.funds[i - 1].amount >= f.amount));
+    check('个股按穿透金额降序', lt.items.every((s, i) => i === 0 || lt.items[i - 1].amount >= s.amount));
+    check('穿透金额不超过账户资产', lt.items.every((s) => s.amount <= lt.totalAmount + 0.01));
+    check('含无重仓数据基金的原文说明字段', Array.isArray(lt.noData), JSON.stringify(lt.noData));
+
+    // 缓存：再次请求应很快且结果一致（重仓股 30 分钟缓存）
+    const t0 = Date.now();
+    const ltAgain = await get('/api/portfolio/lookthrough');
+    const cachedMs = Date.now() - t0;
+    check('重仓股命中缓存（二次请求 < 300ms）', cachedMs < 300, `${cachedMs}ms`);
+    check('二次结果一致', ltAgain.body.lookthrough.stockCount === lt.stockCount && ltAgain.body.lookthrough.coveredAmount === lt.coveredAmount);
+
     /* ---------- 重启持久化 ---------- */
-    console.log('\n【7】重启后端后数据仍在');
+    console.log('\n【8】重启后端后数据仍在');
     server.kill('SIGKILL');
     await wait(1200);
     start();

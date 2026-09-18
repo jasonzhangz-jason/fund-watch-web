@@ -76,6 +76,8 @@ async function routeAccount(req, url, query, cookies, body) {
   if (p === '/api/portfolio' && req.method === 'GET') return accountHandlers.getPortfolio({ cookies, query });
   if (p === '/api/portfolio/history' && req.method === 'GET') return accountHandlers.portfolioHistory({ cookies, query });
   if (p === '/api/portfolio/daily' && req.method === 'GET') return accountHandlers.portfolioDaily({ cookies, query });
+  if (p === '/api/portfolio/lookthrough' && req.method === 'GET') return accountHandlers.lookthrough({ cookies, query });
+  if (p === '/api/portfolio/correlation' && req.method === 'GET') return accountHandlers.correlation({ cookies, query });
   if (p === '/api/quotes' && req.method === 'GET') return accountHandlers.getQuotes({ cookies, query });
 
   // 后台管理

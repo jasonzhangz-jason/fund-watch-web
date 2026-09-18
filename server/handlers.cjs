@@ -5,6 +5,7 @@ const auth = require('./auth.cjs');
 const { getDb, checkpoint } = require('./db.cjs');
 const portfolio = require('./portfolio.cjs');
 const market = require('./market.cjs');
+const { buildCorrelation } = require('./correlation.cjs');
 
 // 启动时确保内置管理员（root/root）已写入 SQLite
 auth.ensureAdminSeed();
@@ -230,6 +231,25 @@ function portfolioDaily({ cookies = {}, query = {} }) {
   const user = currentUser(cookies);
   if (!user) return err(401, '请先登录');
   return ok({ items: portfolio.getPositionDaily(user.id, { date: query.date, days: query.days }) });
+}
+
+/** 持仓穿透（?refresh=1 强制刷新重仓股缓存） */
+async function lookthrough({ cookies = {}, query = {} }) {
+  const user = currentUser(cookies);
+  if (!user) return err(401, '请先登录');
+  const data = await portfolio.buildLookthrough(user.id, { force: String(query.refresh || '') === '1' });
+  return ok({ lookthrough: data });
+}
+
+/** 基金相关性分析（?days=60 分析窗口，?refresh=1 强制刷新净值缓存） */
+async function correlation({ cookies = {}, query = {} }) {
+  const user = currentUser(cookies);
+  if (!user) return err(401, '请先登录');
+  const data = await buildCorrelation(user.id, {
+    window: query.days,
+    force: String(query.refresh || '') === '1',
+  });
+  return ok({ correlation: data });
 }
 
 /** 批量行情（走 fund_quotes 缓存，?refresh=1 强制刷新） */
@@ -563,6 +583,6 @@ module.exports = {
   register, login, logout, me,
   listWatchlist, addWatchlist, removeWatchlist, syncWatchlist, reorderWatchlist,
   listPositions, savePosition, removePositions, reorderPosition,
-  getPortfolio, portfolioHistory, portfolioDaily, getQuotes,
+  getPortfolio, portfolioHistory, portfolioDaily, lookthrough, correlation, getQuotes,
   adminStats, adminUsers, adminUserDetail, adminDeleteUser, adminResetPassword, adminMetricDetail,
 };

@@ -15,11 +15,25 @@ type Row = {
   name: string;
   amount: number;
   profit: number;
+  /** 持仓收益率 % = 持有收益 / 本金（本金 = 持有金额 - 持有收益），本金 ≤ 0 时为 null */
+  rate: number | null;
   dayProfit: number;
   dayChange: number;
   estChange: number | null;
   updated: boolean;
 };
+
+/** 持仓行右侧两列的统一列宽与间距：表头与数据行共用，保证逐列对齐 */
+const COL_PROFIT = 'w-[84px]';
+const COL_CHANGE = 'w-[72px]';
+const COL_GAP = 'gap-x-3';
+
+/** 持仓收益率：收益 / 本金 × 100（本金 = 当前持有金额 - 持有收益） */
+function holdRate(amount: number, profit: number): number | null {
+  const cost = amount - profit;
+  if (!Number.isFinite(cost) || cost <= 0) return null;
+  return (profit / cost) * 100;
+}
 
 /** 账本主页（对应截图 主页-1 / 主页-2）
  *  登录后走服务端账本服务 /api/portfolio：账户资产、当日收益、每日快照都在后端计算并落库；
@@ -30,7 +44,7 @@ export default function LedgerHome() {
   const navigate = useNavigate();
   const [pf, setPf] = useState<Portfolio | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [sortKey, setSortKey] = useState<'dayProfit' | 'dayChange' | null>(null);
+  const [sortKey, setSortKey] = useState<'dayProfit' | 'dayChange' | 'rate' | null>(null);
   const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
 
   const loadPortfolio = useCallback(
@@ -79,6 +93,7 @@ export default function LedgerHome() {
           name: i.name,
           amount: i.amount,
           profit: i.profit,
+          rate: i.rate ?? holdRate(i.amount, i.profit),
           dayProfit: i.dayProfit,
           dayChange: i.dayChange ?? 0,
           estChange: i.estChange,
@@ -93,6 +108,7 @@ export default function LedgerHome() {
             name: m?.name || f.name,
             amount: f.amount,
             profit: f.profit,
+            rate: holdRate(f.amount, f.profit),
             dayProfit: live ? (f.amount * dayChange) / 100 : f.dayProfit,
             dayChange,
             estChange: m?.estChange ?? null,
@@ -102,7 +118,15 @@ export default function LedgerHome() {
 
     if (!sortKey) return built;
     const factor = sortDir === 'desc' ? -1 : 1;
-    return [...built].sort((a, b) => (a[sortKey] - b[sortKey]) * factor);
+    return [...built].sort((a, b) => {
+      const va = a[sortKey];
+      const vb = b[sortKey];
+      // 无法计算收益率的持仓始终排在最后
+      if (va === null && vb === null) return 0;
+      if (va === null) return 1;
+      if (vb === null) return -1;
+      return (va - vb) * factor;
+    });
   }, [serverMode, pf, funds, market, sortKey, sortDir]);
 
   const totalAmount = serverMode ? pf!.totalAmount : list.reduce((s, r) => s + r.amount, 0);
@@ -119,7 +143,7 @@ export default function LedgerHome() {
   })();
 
   const toggleSort = (key: SortKey) => {
-    if (key !== 'dayProfit' && key !== 'dayChange') return;
+    if (key !== 'dayProfit' && key !== 'dayChange' && key !== 'rate') return;
     if (sortKey === key) setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'));
     else {
       setSortKey(key);
@@ -146,16 +170,23 @@ export default function LedgerHome() {
           </Card>
         </div>
 
-        {/* 列表头（含操作菜单锚点） */}
-        <div className="relative mt-2.5 flex h-[34px] items-center px-4">
+        {/* 列表头（含操作菜单锚点）：左「收益率」排序 + 右两列排序 */}
+        <div className="relative mt-2.5 flex h-[34px] items-center gap-3 px-4">
           <button type="button" aria-label="账本操作" onClick={() => setMenuOpen((v) => !v)} className="flex items-center gap-2">
             <PlusCircle size={17} className={menuOpen ? 'text-primary' : 'text-ink-3'} strokeWidth={2.2} />
             <span className="tnum text-[12.5px] font-medium text-up">{upCount} ↑</span>
             <span className="tnum text-[12.5px] font-medium text-down">{downCount} ↓</span>
           </button>
-          <div className="ml-auto flex w-[176px] items-center">
-            <SortHeader label="当日收益" date="实时" sortKey="dayProfit" activeKey={sortKey} dir={sortDir} onToggle={toggleSort} />
-            <SortHeader label="当日涨幅" date="盘中" sortKey="dayChange" activeKey={sortKey} dir={sortDir} onToggle={toggleSort} />
+          <div className="w-[62px]">
+            <SortHeader label="收益率" sortKey="rate" activeKey={sortKey} dir={sortDir} onToggle={toggleSort} />
+          </div>
+          <div className={`ml-auto flex items-center ${COL_GAP}`}>
+            <div className={COL_PROFIT}>
+              <SortHeader label="当日收益" date="实时" sortKey="dayProfit" activeKey={sortKey} dir={sortDir} onToggle={toggleSort} />
+            </div>
+            <div className={COL_CHANGE}>
+              <SortHeader label="当日涨幅" date="盘中" sortKey="dayChange" activeKey={sortKey} dir={sortDir} onToggle={toggleSort} />
+            </div>
           </div>
           {menuOpen ? <ActionMenu anchor="ledger" onClose={() => setMenuOpen(false)} /> : null}
         </div>
@@ -186,21 +217,31 @@ export default function LedgerHome() {
                 type="button"
                 aria-label={`查看 ${r.name} 详情`}
                 onClick={() => navigate(`/fund/${r.code}`)}
-                className="flex h-14 w-full items-center px-4 text-left active:bg-field"
+                className={`flex h-[60px] w-full items-center px-4 text-left active:bg-field ${COL_GAP}`}
               >
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[15.5px] font-medium text-ink">{r.name}</p>
-                  <div className="mt-0.5 flex items-center gap-1.5">
+                  <p className="truncate text-[15px] font-medium leading-[20px] text-ink">{r.name}</p>
+                  <div className="mt-[3px] flex items-center gap-1.5 leading-[18px]">
                     <UpdatedTag updated={r.updated} />
-                    <span className="tnum text-[13px] text-ink">¥{fmtMoney(r.amount)}</span>
+                    <span className="tnum shrink-0 text-[12.5px] text-ink-2">¥{fmtMoney(r.amount)}</span>
+                    {/* 持仓收益率：持有收益 / 本金（右对齐在金额行尾，与表头「收益率」排序呼应） */}
+                    <span
+                      data-testid={`rate-${r.code}`}
+                      className={[
+                        'tnum ml-auto shrink-0 text-[12.5px] font-medium',
+                        r.rate === null ? 'text-ink-3' : r.rate >= 0 ? 'text-up' : 'text-down',
+                      ].join(' ')}
+                    >
+                      {r.rate === null ? '—' : `收益率 ${r.rate >= 0 ? '+' : ''}${r.rate.toFixed(2)}%`}
+                    </span>
                   </div>
                 </div>
                 <span
-                  className={['tnum w-[92px] text-right text-[16px] font-semibold', r.dayProfit >= 0 ? 'text-up' : 'text-down'].join(' ')}
+                  className={['tnum whitespace-nowrap text-right text-[15px] font-semibold leading-[20px]', COL_PROFIT, r.dayProfit >= 0 ? 'text-up' : 'text-down'].join(' ')}
                 >
                   {fmtMoneySigned(r.dayProfit)}
                 </span>
-                <span className="flex w-[76px] justify-end">
+                <span className={`flex justify-end ${COL_CHANGE}`}>
                   <ChangeChip value={r.dayChange} />
                 </span>
               </button>

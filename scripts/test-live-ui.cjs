@@ -251,7 +251,8 @@ function startWeb() {
     check('role 渲染为中文', mineText.includes('普通用户') || mineText.includes('管理员'));
     check('普通用户看不到「后台管理」按钮', !mineText.includes('后台管理'));
     check('「我的」页已无「后台概览」展示栏', !mineText.includes('后台概览'));
-    check('显示「我的自选 / 我的持仓明细」', mineText.includes('我的自选') && mineText.includes('我的持仓明细'));
+    check('显示「我的自选 / 持仓穿透」入口', mineText.includes('我的自选') && mineText.includes('持仓穿透'));
+    check('「我的」页不再平铺持仓明细', !mineText.includes('我的持仓明细'), mineText.slice(0, 100));
     check('已剔除接口字段展示（无 id/created_at 行）', !mineText.includes('created_at') && !/\bid\b/.test(mineText), mineText.slice(0, 100));
     check('已剔除技术性说明文案', !mineText.includes('HttpOnly') && !mineText.includes('/api/auth/me'));
     const tabs = await page.$$eval('nav button', (els) => els.map((e) => e.innerText.trim()));
@@ -335,6 +336,78 @@ function startWeb() {
     const ledgerText = await page.$eval('body', (b) => b.innerText);
     check('账本页显示落库的持仓金额', ledgerText.includes('12,345.67'), ledgerText.slice(0, 120));
     check('账本页状态行标注 60s 自动刷新', ledgerText.includes('60s'), ledgerText.slice(0, 120));
+
+    /* ---------- 8c. 持仓收益率：展示 + 排序 ---------- */
+    console.log('\n【8c】持仓收益率：逐只展示 + 点击表头排序');
+    // 再补两只持仓（收益率差异明显，便于验证排序），随后整页重载
+    await page.evaluate(async () => {
+      const items = [
+        { code: '006274', name: '圆信永丰医药健康A', amount: 36226.29, profit: -1497.52 },
+        { code: '163406', name: '兴全合润混合A', amount: 48528.41, profit: 5752.3 },
+      ];
+      for (const it of items) {
+        await fetch('/api/positions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(it),
+        });
+      }
+      await fetch('/api/portfolio?refresh=1');
+    });
+    await page.goto(`${WEB}/#/`, { waitUntil: 'load' });
+    await page.reload({ waitUntil: 'load' });
+    await wait(3000);
+
+    const pfNow = await page.evaluate(async () => (await fetch('/api/portfolio')).json());
+    const readRates = () =>
+      page.$$eval('[data-testid^="rate-"]', (els) =>
+        els.map((e) => ({ code: e.dataset.testid.slice(5), text: e.innerText.trim() })),
+      );
+
+    const shownRates = await readRates();
+    check(
+      '每只持仓都展示收益率',
+      shownRates.length === pfNow.portfolio.items.length && shownRates.length >= 3,
+      `${shownRates.length} vs ${pfNow.portfolio.items.length}`,
+    );
+    const apiRate = new Map(pfNow.portfolio.items.map((i) => [i.code, i.rate]));
+    const rateMismatch = shownRates.filter((s) => {
+      const r = apiRate.get(s.code);
+      const expect = r === null || r === undefined ? '—' : `收益率 ${r >= 0 ? '+' : ''}${r.toFixed(2)}%`;
+      return s.text !== expect;
+    });
+    check('收益率与接口计算值一致', rateMismatch.length === 0, JSON.stringify(rateMismatch).slice(0, 140));
+    const sample = pfNow.portfolio.items.find((i) => i.code === '163406');
+    check(
+      '口径 = 持有收益 / 本金（本金 = 金额 - 收益）',
+      Boolean(sample) && Math.abs(sample.rate - (5752.3 / (48528.41 - 5752.3)) * 100) < 0.01,
+      JSON.stringify(sample),
+    );
+
+    // 表头三列均可排序
+    for (const label of ['当日收益', '当日涨幅', '收益率']) {
+      const btn = await page.$(`button[aria-label="按${label}排序"]`);
+      check(`表头「${label}」可排序`, btn !== null);
+    }
+
+    const parseRates = (list) => list.map((t) => Number((t.match(/-?\d+\.\d+/) || ['NaN'])[0]));
+    await page.click('button[aria-label="按收益率排序"]');
+    await wait(900);
+    const descRates = parseRates((await readRates()).map((r) => r.text));
+    check(
+      '点击「收益率」表头按降序排列',
+      descRates.every((v, i) => i === 0 || descRates[i - 1] >= v),
+      descRates.join(', '),
+    );
+    await page.click('button[aria-label="按收益率排序"]');
+    await wait(900);
+    const ascRates = parseRates((await readRates()).map((r) => r.text));
+    check(
+      '再次点击切换为升序排列',
+      ascRates.every((v, i) => i === 0 || ascRates[i - 1] <= v),
+      ascRates.join(', '),
+    );
+    await page.screenshot({ path: path.join(ROOT, 'shots', '账本-持仓收益率.png') });
 
     /* ---------- 8b. 账本 / 自选：点击基金行跳转详情页 ---------- */
     console.log('\n【8b】账本 / 自选：点击基金行跳转详情页');
@@ -626,6 +699,92 @@ function startWeb() {
     await adm4.close();
 
     check('无 JS 运行时错误', jsErrors.length === 0, jsErrors.slice(0, 3).join(' | '));
+
+    /* ---------- 13. 我的页：不展示持仓明细 + 持仓穿透 ---------- */
+    console.log('\n【13】我的页：持仓明细下线 + 持仓穿透（个股 / 比重 / 涉及基金）');
+    const ltPage = await browser.newPage();
+    ltPage.on('pageerror', (e) => jsErrors.push(`[lookthrough] ${e.message}`));
+    await ltPage.setViewport({ width: 393, height: 852, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+    await ltPage.goto(`${WEB}/#/`, { waitUntil: 'load' });
+
+    const ltUser = await ltPage.evaluate(async () => {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      const username = `lt_${Math.random().toString(36).slice(2, 7)}`;
+      const reg = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password: 'lt123456' }),
+      });
+      if (!reg.ok) return null;
+      const items = [
+        { code: '161725', name: '招商中证白酒指数(LOF)A', amount: 60000, profit: -1500 },
+        { code: '163406', name: '兴全合润混合A', amount: 30000, profit: 3200 },
+        { code: '006274', name: '圆信永丰医药健康A', amount: 10000, profit: -420 },
+      ];
+      for (const it of items) {
+        await fetch('/api/positions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(it),
+        });
+      }
+      return { username };
+    });
+    check('已创建穿透测试账号（3 只持仓）', Boolean(ltUser?.username), JSON.stringify(ltUser));
+
+    await ltPage.goto(`${WEB}/#/mine`, { waitUntil: 'load' });
+    await ltPage.reload({ waitUntil: 'load' });
+    await wait(2600);
+    const mineText2 = await ltPage.$eval('body', (el) => el.innerText);
+    check('我的页不再展示持仓明细', !mineText2.includes('我的持仓明细'), mineText2.slice(0, 80));
+    check('我的页提供「持仓穿透」入口', mineText2.includes('持仓穿透'));
+
+    await ltPage.click('button[aria-label="持仓穿透"]');
+    await wait(6000);
+    check('进入持仓穿透页', ltPage.url().includes('#/lookthrough'), ltPage.url());
+
+    const ltApi = await ltPage.evaluate(async () => (await fetch('/api/portfolio/lookthrough')).json());
+    const ltData = ltApi.lookthrough;
+    const ltText = await ltPage.$eval('body', (el) => el.innerText);
+    check('展示穿透资产与覆盖率', ltText.includes('穿透资产') && ltText.includes('重仓股覆盖'), ltText.slice(0, 90));
+    check('穿透出个股（多只基金参与）', ltData.items.length > 0, `${ltData.items.length} 只个股`);
+    check('说明仅覆盖前十大重仓股', ltText.includes('前十大重仓股') && ltText.includes('覆盖率通常小于 100%'));
+
+    const ltRows = await ltPage.$$eval('ul li button[aria-label$="穿透明细"]', (els) =>
+      els.map((e) => e.getAttribute('aria-label')),
+    );
+    check('个股行数与接口一致', ltRows.length === ltData.items.length, `${ltRows.length} vs ${ltData.items.length}`);
+
+    const money = (n) => n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const topStock = ltData.items[0];
+    check('首行展示穿透金额', ltText.includes(`¥${money(topStock.amount)}`), `期望 ¥${money(topStock.amount)}`);
+    check('首行展示占账户比', ltText.includes(`占账户 ${topStock.ratio.toFixed(2)}%`), `期望 ${topStock.ratio.toFixed(2)}%`);
+
+    // 展开 → 看具体哪几只基金持有
+    await ltPage.click('ul li button[aria-label$="穿透明细"]');
+    await wait(900);
+    const expandedText = await ltPage.$eval('body', (el) => el.innerText);
+    check(
+      '展开后显示涉及基金及其占净值比',
+      expandedText.includes('占净值') && expandedText.includes(topStock.funds[0].name.slice(0, 6)),
+      `期望包含 ${topStock.funds[0].name} / 占净值 ${topStock.funds[0].weight.toFixed(2)}%`,
+    );
+    check('涉及基金的贡献金额与接口一致', expandedText.includes(`¥${money(topStock.funds[0].amount)}`));
+    await ltPage.screenshot({ path: path.join(ROOT, 'shots', '持仓穿透.png') });
+
+    // 排序：按涉及基金数
+    const byFunds = [...ltData.items].sort((a, b) => b.fundCount - a.fundCount);
+    await ltPage.click('button[aria-label="按涉及基金数排序"]');
+    await wait(900);
+    const sortedFirst = (await ltPage.$$eval('ul li button[aria-label$="穿透明细"]', (els) => els.map((e) => e.getAttribute('aria-label'))))[0] || '';
+    check('按涉及基金数排序生效', sortedFirst.includes(byFunds[0].name.slice(0, 5)), `${sortedFirst} vs ${byFunds[0].name}`);
+
+    // 点击穿透中的基金 → 基金详情
+    await ltPage.click(`ul li button[aria-label="查看 ${topStock.funds[0].name} 详情"]`);
+    await wait(1800);
+    check('点击穿透中的基金进入详情页', ltPage.url().includes('#/fund/'), ltPage.url());
+    check('详情页标题为对应基金', (await ltPage.$eval('body', (el) => el.innerText)).includes(topStock.funds[0].name.slice(0, 6)));
+    await ltPage.close();
 
     console.log(`\n结果：通过 ${pass} / 失败 ${fail}`);
   } catch (e) {

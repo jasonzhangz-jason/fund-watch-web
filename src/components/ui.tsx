@@ -8,17 +8,21 @@ import type { SortDir, SortKey } from '../state/store';
 export function ChangeChip({
   value,
   muted = false,
+  size = 'md',
   className = '',
 }: {
   value: number;
   muted?: boolean;
+  /** md=72×26（默认）；sm=68×24，用于账本等多列密集列表 */
+  size?: 'md' | 'sm';
   className?: string;
 }) {
   if (muted) {
     return (
       <span
         className={[
-          'tnum inline-flex h-[26px] w-[72px] items-center justify-center rounded-md bg-[#C8CDD6] text-[16px] font-semibold text-white',
+          'tnum inline-flex items-center justify-center rounded-md bg-[#C8CDD6] font-semibold text-white',
+          size === 'sm' ? 'h-[24px] w-[68px] text-[14.5px]' : 'h-[26px] w-[72px] text-[16px]',
           className,
         ].join(' ')}
       >
@@ -30,7 +34,8 @@ export function ChangeChip({
   return (
     <span
       className={[
-        'tnum inline-flex h-[26px] w-[72px] items-center justify-center rounded-md text-[16px] font-semibold text-white',
+        'tnum inline-flex items-center justify-center rounded-md font-semibold text-white',
+        size === 'sm' ? 'h-[24px] w-[68px] text-[14.5px]' : 'h-[26px] w-[72px] text-[16px]',
         up ? 'bg-up' : 'bg-down',
         className,
       ].join(' ')}
@@ -67,13 +72,13 @@ export function ChangeText({ value, className = '' }: { value: number; className
 export function UpdatedTag({ updated = true }: { updated?: boolean }) {
   if (!updated) {
     return (
-      <span className="inline-flex items-center rounded bg-[#F1F2F4] px-1.5 py-[1px] text-[10.5px] leading-[15px] text-ink-2">
+      <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded bg-[#F1F2F4] px-1.5 py-[1px] text-[10.5px] leading-[15px] text-ink-2">
         待更新
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center rounded bg-primary-tint px-1.5 py-[1px] text-[10.5px] leading-[15px] text-primary">
+    <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded bg-primary-tint px-1.5 py-[1px] text-[10.5px] leading-[15px] text-primary">
       已更新
     </span>
   );
@@ -82,7 +87,8 @@ export function UpdatedTag({ updated = true }: { updated?: boolean }) {
 /* ============================ 可排序表头 ============================ */
 type SortHeaderProps = {
   label: string;
-  date: string;
+  /** 第二行的小字说明（如 实时 / 盘中）；不传则只渲染单行标签，用于紧凑位置 */
+  date?: string;
   sortKey: SortKey;
   activeKey: SortKey | null;
   dir: SortDir;
@@ -90,13 +96,15 @@ type SortHeaderProps = {
   className?: string;
 };
 
-/** 「当日收益 ⇅ / 09-16」式表头，点击切换升/降序 */
+/** 「当日收益 ⇅ / 实时」式表头，点击切换升/降序 */
 export function SortHeader({ label, date, sortKey, activeKey, dir, onToggle, className = '' }: SortHeaderProps) {
   const active = activeKey === sortKey;
   const Icon = active ? (dir === 'desc' ? ArrowDown : ArrowUp) : ArrowUpDown;
   return (
     <button
       type="button"
+      aria-label={`按${label}排序`}
+      aria-pressed={active}
       onClick={() => onToggle(sortKey)}
       className={['flex flex-1 flex-col items-end justify-center gap-0.5 leading-none', className].join(' ')}
     >
@@ -104,7 +112,7 @@ export function SortHeader({ label, date, sortKey, activeKey, dir, onToggle, cla
         {label}
         <Icon size={11} strokeWidth={2.4} />
       </span>
-      <span className="text-[11px] text-ink-3">{date}</span>
+      {date ? <span className="text-[11px] text-ink-3">{date}</span> : null}
     </button>
   );
 }

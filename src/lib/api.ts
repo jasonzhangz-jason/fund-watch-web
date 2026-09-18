@@ -101,6 +101,8 @@ export type PortfolioItem = {
   name: string;
   amount: number;
   profit: number;
+  /** 持仓收益率 %（服务端计算：持有收益 / 本金）；本金 ≤ 0 时为 null */
+  rate: number | null;
   nav: number | null;
   navDate: string | null;
   dayChange: number | null;
@@ -120,6 +122,79 @@ export type Portfolio = {
   watchCount: number;
   updatedAt: string;
   items: PortfolioItem[];
+};
+
+/** 相关性组合（两只基金） */
+export type CorrelationPair = {
+  aCode: string;
+  aName: string;
+  bCode: string;
+  bName: string;
+  corr: number;
+  level: string;
+};
+
+/** 基金相关性分析结果（/api/portfolio/correlation） */
+export type Correlation = {
+  /** 实际使用的窗口（交易日数） */
+  window: number;
+  requestedWindow: number;
+  /** 共同交易日数 */
+  pointCount: number;
+  /** 收益率样本数 = pointCount - 1 */
+  returnCount?: number;
+  startDate: string | null;
+  endDate: string | null;
+  fundCount: number;
+  funds: Array<{ code: string; name: string; amount: number }>;
+  /** N×N 相关系数矩阵（null = 无法计算，如无波动） */
+  matrix: Array<Array<number | null>>;
+  pairs: CorrelationPair[];
+  mostSimilar: CorrelationPair | null;
+  mostDiverse: CorrelationPair | null;
+  avgCorr: number | null;
+  insufficient: Array<{ code: string; name: string; points: number }>;
+  reason?: string;
+  updatedAt: string;
+};
+
+/** 持仓穿透中的单只个股（跨基金聚合） */
+export type LookThroughStock = {
+  rank: number;
+  code: string;
+  name: string;
+  /** 穿透金额（元）= Σ 各基金持有金额 × 该股占净值比 */
+  amount: number;
+  /** 占账户资产比例 % */
+  ratio: number;
+  fundCount: number;
+  /** 持有该股的基金（按贡献金额降序） */
+  funds: Array<{
+    code: string;
+    name: string;
+    /** 该股在这只基金里的占净值比例 % */
+    weight: number;
+    /** 该基金为这只股票贡献的穿透金额（元） */
+    amount: number;
+    change: number | null;
+  }>;
+};
+
+/** 持仓穿透结果（/api/portfolio/lookthrough） */export type LookThrough = {
+  totalAmount: number;
+  /** 重仓股穿透覆盖的资产（元） */
+  coveredAmount: number;
+  /** 覆盖比例 %（非 100%，只覆盖各基金前十大重仓股） */
+  coverage: number;
+  positionCount: number;
+  stockCount: number;
+  date: string | null;
+  quarter: string | null;
+  stale: boolean;
+  /** 无重仓股数据的基金（债基/QDII 等） */
+  noData: Array<{ code: string; name: string; amount: number }>;
+  items: LookThroughStock[];
+  updatedAt: string;
 };
 
 /** 账户每日快照 */
@@ -233,6 +308,16 @@ export const api = {
       `/api/portfolio/daily?${qs}`,
     );
   },
+
+  /** 持仓穿透：按各基金前十大重仓股穿透到个股（?refresh=1 强制刷新重仓股缓存） */
+  lookthrough: (refresh = false) =>
+    request<{ ok: true; lookthrough: LookThrough }>(`/api/portfolio/lookthrough${refresh ? '?refresh=1' : ''}`),
+
+  /** 基金相关性分析：账本内基金走势相似程度（days = 参与计算的交易日数） */
+  correlation: (days = 60, refresh = false) =>
+    request<{ ok: true; correlation: Correlation }>(
+      `/api/portfolio/correlation?days=${days}${refresh ? '&refresh=1' : ''}`,
+    ),
 
   /** 批量行情（服务端 60s 缓存，refresh=1 强制刷新） */
   quotes: (codes: string[], refresh = false) =>
