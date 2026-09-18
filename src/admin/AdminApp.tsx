@@ -1,12 +1,29 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { LogIn, LogOut, RefreshCw, Search, Shield, ShieldAlert } from 'lucide-react';
+import { CheckCircle2, ChevronRight, LogIn, LogOut, RefreshCw, Search, Shield, ShieldAlert, X } from 'lucide-react';
 import { api, ApiError, type AdminStats, type AdminUser, type User } from '../lib/api';
+import { UserActionModal, type ActionMode } from './UserActionModal';
+import { MetricDetailModal } from './MetricDetailModal';
+
+/** 媒体查询 hook（用于按视口只渲染一种列表布局） */
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState(() =>
+    typeof window === 'undefined' ? false : window.matchMedia(query).matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const onChange = () => setMatches(mq.matches);
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, [query]);
+  return matches;
+}
 
 /**
  * 后台管理页（独立入口 /admin.html，前台「我的」页的管理员按钮以新标签页打开）
  *   - 未登录：内联登录表单（同一套 /api/auth/* 与会话 Cookie）
  *   - 已登录但非管理员：提示权限不足，可切换账号
- *   - 管理员：系统运营数据 + 用户列表（60s 自动刷新）
+ *   - 管理员：系统运营数据 + 用户列表（可重置登录密码 / 级联删除用户）
  *   - 自适应：手机用卡片式列表、PC 用表格；顶栏在窄屏换行不溢出
  */
 export default function AdminApp() {
@@ -20,12 +37,20 @@ export default function AdminApp() {
   const [error, setError] = useState('');
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
 
+  /* ---------------- 用户操作（重置密码 / 删除） ---------------- */
+  const [action, setAction] = useState<{ mode: ActionMode; user: AdminUser } | null>(null);
+  const [notice, setNotice] = useState('');
+  /** 指标明细下钻（点击运营数据卡片） */
+  const [metricKey, setMetricKey] = useState<string | null>(null);
+
   /* ---------------- 登录表单 ---------------- */
   const [form, setForm] = useState({ username: '', password: '' });
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState('');
 
   const isAdmin = user?.role === 'admin';
+  /** 视口判定：≥768px 用表格，否则用卡片（只渲染一套，避免重复 DOM） */
+  const isDesktop = useMediaQuery('(min-width: 768px)');
 
   const load = useCallback(async () => {
     if (!user || user.role !== 'admin') return;
@@ -83,16 +108,16 @@ export default function AdminApp() {
   const cards = useMemo(() => {
     if (!stats) return [];
     return [
-      { group: '账号', label: '注册用户', value: stats.users, hint: '含管理员' },
-      { group: '账号', label: '管理员', value: stats.admins, hint: 'role = admin' },
-      { group: '账号', label: '活跃会话', value: stats.activeSessions, hint: '未过期会话数' },
-      { group: '自选', label: '自选条数', value: stats.watchlistItems, hint: 'watchlist 表' },
-      { group: '自选', label: '有自选用户', value: stats.usersWithWatchlist, hint: '去重用户数' },
-      { group: '账本', label: '持仓条数', value: stats.positionsItems, hint: 'positions 表' },
-      { group: '账本', label: '有持仓用户', value: stats.usersWithPositions, hint: '去重用户数' },
-      { group: '数据', label: '行情缓存', value: stats.quotesCached, hint: 'fund_quotes 条数' },
-      { group: '数据', label: '快照天数', value: stats.snapshotDays, hint: `最新 ${stats.latestSnapshot || '—'}` },
-      { group: '数据', label: '每日明细行', value: stats.positionDailyRows, hint: 'position_daily 行数' },
+      { key: 'users', group: '账号', label: '注册用户', value: stats.users, hint: '含管理员' },
+      { key: 'admins', group: '账号', label: '管理员', value: stats.admins, hint: 'role = admin' },
+      { key: 'activeSessions', group: '账号', label: '活跃会话', value: stats.activeSessions, hint: '未过期会话数' },
+      { key: 'watchlistItems', group: '自选', label: '自选条数', value: stats.watchlistItems, hint: 'watchlist 表' },
+      { key: 'usersWithWatchlist', group: '自选', label: '有自选用户', value: stats.usersWithWatchlist, hint: '去重用户数' },
+      { key: 'positionsItems', group: '账本', label: '持仓条数', value: stats.positionsItems, hint: 'positions 表' },
+      { key: 'usersWithPositions', group: '账本', label: '有持仓用户', value: stats.usersWithPositions, hint: '去重用户数' },
+      { key: 'quotesCached', group: '数据', label: '行情缓存', value: stats.quotesCached, hint: 'fund_quotes 条数' },
+      { key: 'snapshotDays', group: '数据', label: '快照天数', value: stats.snapshotDays, hint: `最新 ${stats.latestSnapshot || '—'}` },
+      { key: 'positionDailyRows', group: '数据', label: '每日明细行', value: stats.positionDailyRows, hint: 'position_daily 行数' },
     ];
   }, [stats]);
 
@@ -113,6 +138,42 @@ export default function AdminApp() {
     >
       {role === 'admin' ? '管理员' : '普通用户'}
     </span>
+  );
+
+  /** 管理员自身与其它管理员账号不允许删除（后端同样会拒绝） */
+  const canDelete = (u: AdminUser) => u.role !== 'admin' && u.id !== user?.id;
+  const deleteHint = (u: AdminUser) =>
+    u.role === 'admin' ? '管理员账号不可删除' : u.id === user?.id ? '不能删除当前登录账号' : '删除用户及其全部数据';
+
+  /** 用户行操作按钮（表格与卡片共用） */
+  const actionButtons = (u: AdminUser, compact = false) => (
+    <div className="flex items-center gap-1.5">
+      <button
+        type="button"
+        aria-label={`重置 ${u.username} 的密码`}
+        onClick={() => setAction({ mode: 'reset', user: u })}
+        className={[
+          'rounded-full bg-field font-medium text-primary hover:bg-primary-tint',
+          compact ? 'px-2.5 py-1 text-[11.5px]' : 'px-3 py-1.5 text-[12.5px]',
+        ].join(' ')}
+      >
+        重置密码
+      </button>
+      <button
+        type="button"
+        aria-label={`删除用户 ${u.username}`}
+        title={deleteHint(u)}
+        disabled={!canDelete(u)}
+        onClick={() => setAction({ mode: 'delete', user: u })}
+        className={[
+          'rounded-full font-medium',
+          compact ? 'px-2.5 py-1 text-[11.5px]' : 'px-3 py-1.5 text-[12.5px]',
+          canDelete(u) ? 'bg-[#FFF1F1] text-up hover:bg-[#FFE4E4]' : 'cursor-not-allowed bg-field text-ink-3',
+        ].join(' ')}
+      >
+        删除
+      </button>
+    </div>
   );
 
   return (
@@ -235,18 +296,39 @@ export default function AdminApp() {
               </button>
             </div>
             {error ? <p className="mt-2 text-[13px] text-up">{error}</p> : null}
+            {notice ? (
+              <div
+                data-testid="admin-notice"
+                className="mt-2 flex items-center gap-2 rounded-card bg-primary-tint px-3 py-2 text-[12.5px] text-primary"
+              >
+                <CheckCircle2 size={14} className="shrink-0" />
+                <span className="min-w-0 flex-1">{notice}</span>
+                <button type="button" aria-label="关闭提示" onClick={() => setNotice('')} className="shrink-0">
+                  <X size={14} />
+                </button>
+              </div>
+            ) : null}
 
-            {/* 指标卡：手机 2 列 / 平板 3 列 / PC 5 列 */}
+            {/* 指标卡：手机 2 列 / 平板 3 列 / PC 5 列；点击下钻查看明细 */}
             <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 lg:grid-cols-5">
               {cards.map((c) => (
-                <div key={`${c.group}-${c.label}`} className="rounded-card bg-white p-3 shadow-card sm:p-3.5">
+                <button
+                  key={c.key}
+                  type="button"
+                  aria-label={`查看${c.label}明细`}
+                  onClick={() => setMetricKey(c.key)}
+                  className="group rounded-card bg-white p-3 text-left shadow-card transition-colors hover:bg-[#F7FAFF] active:bg-primary-tint sm:p-3.5"
+                >
                   <div className="flex items-center justify-between gap-1">
                     <span className="truncate text-[12px] text-ink-2">{c.label}</span>
                     <span className="shrink-0 rounded bg-field px-1.5 py-[1px] text-[10.5px] text-ink-3">{c.group}</span>
                   </div>
                   <p className="tnum mt-1.5 text-[22px] font-bold leading-none text-ink sm:text-[24px]">{c.value}</p>
-                  <p className="mt-1 truncate text-[11px] text-ink-3">{c.hint}</p>
-                </div>
+                  <p className="mt-1 flex items-center gap-0.5 text-[11px] text-ink-3">
+                    <span className="truncate">{c.hint}</span>
+                    <ChevronRight size={11} className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
+                  </p>
+                </button>
               ))}
             </div>
 
@@ -266,76 +348,101 @@ export default function AdminApp() {
               </div>
             </div>
 
-            {/* 手机：卡片式列表 */}
-            <ul data-testid="admin-user-cards" className="mt-3 divide-y divide-line overflow-hidden rounded-card bg-white shadow-card md:hidden">
-              {users.length === 0 ? (
-                <li className="px-4 py-8 text-center text-[13px] text-ink-3">{loading ? '加载中…' : '暂无用户'}</li>
-              ) : (
-                users.map((u) => (
-                  <li key={u.id} className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <span className="min-w-0 truncate text-[14px] font-medium text-ink">{u.username}</span>
-                      {roleChip(u.role)}
-                      <span className="tnum ml-auto shrink-0 text-[11.5px] text-ink-3">#{u.id}</span>
-                    </div>
-                    <div className="mt-2 flex items-center gap-4 text-[12px] text-ink-2">
-                      <span>
-                        自选 <b className="tnum text-ink">{u.fundCount}</b>
-                      </span>
-                      <span>
-                        活跃会话 <b className="tnum text-ink">{u.activeSessions}</b>
-                      </span>
-                      <span className="tnum ml-auto shrink-0 text-[11.5px] text-ink-3">{fmtTime(u.createdAt)}</span>
-                    </div>
-                  </li>
-                ))
-              )}
-            </ul>
-
-            {/* PC / 平板：表格（容器可横向滚动，避免被裁切） */}
-            <div data-testid="admin-user-table" className="mt-3 hidden overflow-hidden rounded-card bg-white shadow-card md:block">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px] text-left text-[13px]">
-                  <thead className="bg-field text-[12px] text-ink-2">
-                    <tr>
-                      <th className="px-4 py-2.5 font-medium">ID</th>
-                      <th className="px-4 py-2.5 font-medium">用户名</th>
-                      <th className="px-4 py-2.5 font-medium">角色</th>
-                      <th className="px-4 py-2.5 text-right font-medium">自选数</th>
-                      <th className="px-4 py-2.5 text-right font-medium">活跃会话</th>
-                      <th className="px-4 py-2.5 font-medium">注册时间</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {users.length === 0 ? (
+            {/* 按视口只渲染一套列表（避免重复 DOM：同一按钮出现两次会让选择器命中隐藏节点） */}
+            {!isDesktop ? (
+              /* 手机：卡片式列表 */
+              <ul data-testid="admin-user-cards" className="mt-3 divide-y divide-line overflow-hidden rounded-card bg-white shadow-card">
+                {users.length === 0 ? (
+                  <li className="px-4 py-8 text-center text-[13px] text-ink-3">{loading ? '加载中…' : '暂无用户'}</li>
+                ) : (
+                  users.map((u) => (
+                    <li key={u.id} className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="min-w-0 truncate text-[14px] font-medium text-ink">{u.username}</span>
+                        {roleChip(u.role)}
+                        <span className="tnum ml-auto shrink-0 text-[11.5px] text-ink-3">#{u.id}</span>
+                      </div>
+                      <div className="mt-2 flex items-center gap-4 text-[12px] text-ink-2">
+                        <span>
+                          自选 <b className="tnum text-ink">{u.fundCount}</b>
+                        </span>
+                        <span>
+                          活跃会话 <b className="tnum text-ink">{u.activeSessions}</b>
+                        </span>
+                        <span className="tnum ml-auto shrink-0 text-[11.5px] text-ink-3">{fmtTime(u.createdAt)}</span>
+                      </div>
+                      <div className="mt-2.5 flex justify-end">{actionButtons(u, true)}</div>
+                    </li>
+                  ))
+                )}
+              </ul>
+            ) : (
+              /* PC / 平板：表格（容器可横向滚动，避免被裁切） */
+              <div data-testid="admin-user-table" className="mt-3 overflow-hidden rounded-card bg-white shadow-card">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[820px] text-left text-[13px]">
+                    <thead className="bg-field text-[12px] text-ink-2">
                       <tr>
-                        <td colSpan={6} className="px-4 py-8 text-center text-ink-3">
-                          {loading ? '加载中…' : '暂无用户'}
-                        </td>
+                        <th className="px-4 py-2.5 font-medium">ID</th>
+                        <th className="px-4 py-2.5 font-medium">用户名</th>
+                        <th className="px-4 py-2.5 font-medium">角色</th>
+                        <th className="px-4 py-2.5 text-right font-medium">自选数</th>
+                        <th className="px-4 py-2.5 text-right font-medium">活跃会话</th>
+                        <th className="px-4 py-2.5 font-medium">注册时间</th>
+                        <th className="px-4 py-2.5 text-right font-medium">操作</th>
                       </tr>
-                    ) : (
-                      users.map((u, i) => (
-                        <tr key={u.id} className={i % 2 ? 'bg-[#FCFCFD]' : ''}>
-                          <td className="tnum px-4 py-2.5 text-ink-2">{u.id}</td>
-                          <td className="px-4 py-2.5 font-medium text-ink">{u.username}</td>
-                          <td className="px-4 py-2.5">{roleChip(u.role)}</td>
-                          <td className="tnum px-4 py-2.5 text-right text-ink">{u.fundCount}</td>
-                          <td className="tnum px-4 py-2.5 text-right text-ink">{u.activeSessions}</td>
-                          <td className="tnum px-4 py-2.5 text-ink-2">{fmtTime(u.createdAt)}</td>
+                    </thead>
+                    <tbody>
+                      {users.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="px-4 py-8 text-center text-ink-3">
+                            {loading ? '加载中…' : '暂无用户'}
+                          </td>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                      ) : (
+                        users.map((u, i) => (
+                          <tr key={u.id} className={i % 2 ? 'bg-[#FCFCFD]' : ''}>
+                            <td className="tnum px-4 py-2.5 text-ink-2">{u.id}</td>
+                            <td className="px-4 py-2.5 font-medium text-ink">{u.username}</td>
+                            <td className="px-4 py-2.5">{roleChip(u.role)}</td>
+                            <td className="tnum px-4 py-2.5 text-right text-ink">{u.fundCount}</td>
+                            <td className="tnum px-4 py-2.5 text-right text-ink">{u.activeSessions}</td>
+                            <td className="tnum px-4 py-2.5 text-ink-2">{fmtTime(u.createdAt)}</td>
+                            <td className="px-4 py-2.5">
+                              <div className="flex justify-end">{actionButtons(u)}</div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
+            )}
 
             <p className="mt-3 text-[11.5px] leading-relaxed text-ink-3">
-              数据来源：GET /api/admin/stats、GET /api/admin/users（均按会话中的 role 鉴权）
+              数据来源：GET /api/admin/stats、GET /api/admin/users；操作为 POST（重置密码）与 DELETE（删除用户，数据库级联清理其数据）
             </p>
           </>
         ) : null}
       </main>
+
+      {/* 用户操作弹层：重置密码 / 级联删除 */}
+      {action ? (
+        <UserActionModal
+          mode={action.mode}
+          user={action.user}
+          onClose={() => setAction(null)}
+          onDone={(message, opts) => {
+            if (!opts?.keepOpen) setAction(null);
+            setNotice(message);
+            void load();
+          }}
+        />
+      ) : null}
+
+      {/* 运营指标明细下钻 */}
+      {metricKey ? <MetricDetailModal metricKey={metricKey} onClose={() => setMetricKey(null)} /> : null}
     </div>
   );
 }

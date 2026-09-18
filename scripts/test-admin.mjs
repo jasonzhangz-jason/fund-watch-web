@@ -110,10 +110,73 @@ try {
   r = await admin.req('DELETE', `/api/admin/users/${rootRow.id}`);
   check('拒绝删除管理员账号 (400)', r.status === 400, JSON.stringify(r.body));
 
+  /* ---------- 级联删除前的准备：让 alice 产生持仓与每日快照 ---------- */
+  console.log('\n【级联删除用户：会话 / 自选 / 持仓 / 每日快照一并清理】');
+  // 注意：u1（alice 原会话）在重置密码时已被作废，这里必须用新会话写入
+  const aliceSession = new Client();
+  r = await aliceSession.req('POST', '/api/auth/login', { username: 'alice', password: 'newpass123' });
+  check('alice 用新密码重新登录成功', r.status === 200, JSON.stringify(r.body));
+
+  r = await aliceSession.req('POST', '/api/positions', { code: '161725', name: '招商中证白酒指数(LOF)A', amount: 10000, profit: 120 });
+  check('alice 写入持仓 1', r.status === 200, JSON.stringify(r.body));
+  r = await aliceSession.req('POST', '/api/positions', { code: '000001', name: '华夏成长混合', amount: 5000, profit: -60 });
+  check('alice 写入持仓 2', r.status === 200, JSON.stringify(r.body));
+  r = await aliceSession.req('GET', '/api/portfolio'); // 触发 position_daily / account_daily 落库
+  check('alice 账本聚合成功（触发每日快照）', r.status === 200 && r.body.portfolio?.items?.length === 2, JSON.stringify(r.body).slice(0, 120));
+
+  const before = (await admin.req('GET', '/api/admin/stats')).body.stats;
+  check('删除前：alice 持仓已计入运营统计', before.positionsItems >= 2 && before.usersWithPositions >= 1, JSON.stringify(before));
+  check('删除前：已写入每日快照', before.positionDailyRows >= 2 && before.snapshotDays >= 1, JSON.stringify(before));
+  check('删除前：alice 会话有效（可读自选）', (await aliceSession.req('GET', '/api/watchlist')).status === 200);
+
+  /* ---------- 运营指标明细下钻（点击指标卡查看构成） ---------- */
+  console.log('\n【运营指标明细下钻】');
+  r = await admin.req('GET', '/api/admin/metrics/users');
+  check('明细：注册用户 3 条', r.status === 200 && r.body.total === 3 && r.body.items.length === 3, JSON.stringify(r.body).slice(0, 100));
+  check('明细：返回列定义', Array.isArray(r.body.columns) && r.body.columns.length >= 3, JSON.stringify(r.body.columns));
+  r = await admin.req('GET', '/api/admin/metrics/admins');
+  check('明细：管理员仅 root', r.body.total === 1 && r.body.items[0].username === 'root', JSON.stringify(r.body.items));
+  r = await admin.req('GET', '/api/admin/metrics/watchlistItems');
+  check('明细：自选 3 条', r.body.total === 3 && r.body.items.length === 3, JSON.stringify(r.body.items).slice(0, 100));
+  r = await admin.req('GET', '/api/admin/metrics/usersWithWatchlist');
+  check('明细：有自选用户 2 且带条数', r.body.total === 2 && typeof r.body.items[0].count === 'number', JSON.stringify(r.body.items));
+  r = await admin.req('GET', '/api/admin/metrics/positionsItems');
+  check('明细：持仓 2 条且含金额/收益', r.body.items.length === 2 && typeof r.body.items[0].amount === 'number' && typeof r.body.items[0].profit === 'number', JSON.stringify(r.body.items));
+  r = await admin.req('GET', '/api/admin/metrics/usersWithPositions');
+  check('明细：有持仓用户 1 且带金额合计', r.body.total === 1 && r.body.items[0].amount === 15000, JSON.stringify(r.body.items));
+  r = await admin.req('GET', '/api/admin/metrics/positionDailyRows');
+  check('明细：每日明细行 ≥2 且含交易日', r.body.items.length >= 2 && Boolean(r.body.items[0].date), JSON.stringify(r.body.items).slice(0, 120));
+  r = await admin.req('GET', '/api/admin/metrics/snapshotDays');
+  check('明细：快照按交易日聚合', r.body.items.length >= 1 && typeof r.body.items[0].users === 'number', JSON.stringify(r.body.items));
+  r = await admin.req('GET', '/api/admin/metrics/activeSessions');
+  check('明细：活跃会话数与统计一致', r.body.total === before.activeSessions, `${r.body.total} vs ${before.activeSessions}`);
+
+  // 一致性：10 个指标的明细总数必须与 /api/admin/stats 对应字段完全一致
+  const statsNow = (await admin.req('GET', '/api/admin/stats')).body.stats;
+  const metricKeys = ['users', 'admins', 'activeSessions', 'watchlistItems', 'usersWithWatchlist', 'positionsItems', 'usersWithPositions', 'quotesCached', 'snapshotDays', 'positionDailyRows'];
+  const mismatch = [];
+  for (const k of metricKeys) {
+    const rr = await admin.req('GET', `/api/admin/metrics/${k}`);
+    if (!rr.body.ok || rr.body.total !== statsNow[k]) mismatch.push(`${k}: ${rr.body.total} vs ${statsNow[k]}`);
+  }
+  check('10 个指标明细总数与运营统计完全一致', mismatch.length === 0, mismatch.join('; '));
+  check('未知指标返回 404', (await admin.req('GET', '/api/admin/metrics/unknownKey')).status === 404);
+  check('普通用户访问指标明细被拒 (403)', (await u2.req('GET', '/api/admin/metrics/users')).status === 403);
+
   r = await admin.req('DELETE', `/api/admin/users/${alice.id}`);
   check('删除普通用户成功', r.status === 200 && r.body.username === 'alice', JSON.stringify(r.body));
-  r = await admin.req('GET', '/api/admin/stats');
-  check('删除后用户数 2、自选 1 条', r.body.stats.users === 2 && r.body.stats.watchlistItems === 1, JSON.stringify(r.body.stats));
+
+  const after = (await admin.req('GET', '/api/admin/stats')).body.stats;
+  check('删除后用户数 2、自选 1 条', after.users === 2 && after.watchlistItems === 1, JSON.stringify(after));
+  check('级联：持仓已清理', after.positionsItems === 0 && after.usersWithPositions === 0, JSON.stringify(after));
+  check('级联：每日明细快照已清理', after.positionDailyRows === 0, JSON.stringify(after));
+  check('级联：账户快照已清理', after.snapshotDays === 0 && after.latestSnapshot === null, JSON.stringify(after));
+  check('级联：alice 的全部会话已删除', after.activeSessions < before.activeSessions, `before=${before.activeSessions} after=${after.activeSessions}`);
+  check('级联：原会话 Cookie 立即失效 (401)', (await aliceSession.req('GET', '/api/watchlist')).status === 401);
+  check('级联：alice 已无法登录', (await aliceSession.req('POST', '/api/auth/login', { username: 'alice', password: 'newpass123' })).status === 401);
+  check('级联：用户详情 404', (await admin.req('GET', `/api/admin/users/${alice.id}`)).status === 404);
+  check('级联：再次删除返回 404', (await admin.req('DELETE', `/api/admin/users/${alice.id}`)).status === 404);
+
   r = await admin.req('GET', '/api/admin/users');
   check('删除后列表无 alice', !r.body.items.some((x) => x.username === 'alice'));
 

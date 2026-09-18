@@ -157,6 +157,20 @@ export type AdminUser = {
   activeSessions: number;
 };
 
+/** 运营指标明细的列定义（/api/admin/metrics/:key） */
+export type AdminMetricColumn = { key: string; label: string; align?: 'right' };
+
+/** 运营指标明细（点击指标卡下钻） */
+export type AdminMetricDetail = {
+  key: string;
+  title: string;
+  note: string;
+  columns: AdminMetricColumn[];
+  items: Array<Record<string, string | number | null>>;
+  total: number;
+  truncated: boolean;
+};
+
 /* ---------------- 接口 ---------------- */
 export const api = {
   me: () => request<{ ok: true; user: User | null }>('/api/auth/me'),
@@ -256,6 +270,32 @@ export const api = {
       `/api/admin/users${suffix}`,
     );
   },
+
+  /**
+   * 运营指标明细（仅管理员）—— 点击运营数据卡片下钻查看构成明细。
+   * key 与 stats 字段同名：users/admins/activeSessions/watchlistItems/usersWithWatchlist/
+   * positionsItems/usersWithPositions/quotesCached/snapshotDays/positionDailyRows
+   */
+  adminMetric: (key: string) =>
+    request<{ ok: true } & AdminMetricDetail>(`/api/admin/metrics/${encodeURIComponent(key)}`),
+
+  /**
+   * 重置用户登录密码（仅管理员）
+   * 成功后该用户既有会话全部失效，需用新密码重新登录。
+   */
+  adminResetPassword: (id: number, password: string) =>
+    request<{ ok: true; id: number; username: string; reset: true }>(`/api/admin/users/${id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'resetPassword', password }),
+    }),
+
+  /**
+   * 删除用户（仅管理员）—— 数据库 `ON DELETE CASCADE` 会级联清理该用户的
+   * 登录会话、自选、持仓与每日快照（position_daily / account_daily）。
+   */
+  adminDeleteUser: (id: number) =>
+    request<{ ok: true; deleted: number; username: string }>(`/api/admin/users/${id}`, { method: 'DELETE' }),
 };
 
 /** 便于在 UI 上区分“后端不可用”与业务错误 */

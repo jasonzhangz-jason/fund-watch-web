@@ -81,6 +81,8 @@ async function routeAccount(req, url, query, cookies, body) {
   // 后台管理
   if (p === '/api/admin/stats' && req.method === 'GET') return accountHandlers.adminStats({ cookies });
   if (p === '/api/admin/users' && req.method === 'GET') return accountHandlers.adminUsers({ cookies, query });
+  const amm = p.match(/^\/api\/admin\/metrics\/([A-Za-z]+)$/);
+  if (amm && req.method === 'GET') return accountHandlers.adminMetricDetail({ cookies, query: { key: amm[1] } });
   const am = p.match(/^\/api\/admin\/users\/(\d+)$/);
   if (am) {
     const id = { id: am[1] };

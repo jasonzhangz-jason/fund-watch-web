@@ -427,18 +427,18 @@ function startWeb() {
     check('手机端：无横向溢出', overflowMobile <= 1, `${overflowMobile}px`);
     const cardsVisible = await admin2.$eval('[data-testid="admin-user-cards"]', (el) => el.offsetParent !== null).catch(() => false);
     check('手机端：用户列表为卡片布局', cardsVisible);
-    const tableOnMobile = await admin2.$eval('[data-testid="admin-user-table"]', (el) => el.offsetParent !== null).catch(() => true);
-    check('手机端：表格布局已隐藏', !tableOnMobile);
+    const tableOnMobile = await admin2.$('[data-testid="admin-user-table"]');
+    check('手机端：表格布局未渲染（单套 DOM）', tableOnMobile === null);
     await admin2.screenshot({ path: path.join(ROOT, 'shots', '后台管理-手机.png') });
 
     await admin2.setViewport({ width: 1280, height: 800, deviceScaleFactor: 1 });
     await wait(1200);
     const overflowPc = await admin2.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     check('PC 端：无横向溢出', overflowPc <= 1, `${overflowPc}px`);
-    const tableOnPc = await admin2.$eval('[data-testid="admin-user-table"]', (el) => el.offsetParent !== null).catch(() => false);
-    check('PC 端：显示表格布局', tableOnPc);
-    const cardsOnPc = await admin2.$eval('[data-testid="admin-user-cards"]', (el) => el.offsetParent !== null).catch(() => true);
-    check('PC 端：卡片布局已隐藏', !cardsOnPc);
+    const tableOnPc = await admin2.$('[data-testid="admin-user-table"]');
+    check('PC 端：显示表格布局', tableOnPc !== null);
+    const cardsOnPc = await admin2.$('[data-testid="admin-user-cards"]');
+    check('PC 端：卡片布局未渲染（单套 DOM）', cardsOnPc === null);
     await admin2.screenshot({ path: path.join(ROOT, 'shots', '后台管理.png') });
 
     await admin2.setViewport({ width: 768, height: 1024, deviceScaleFactor: 2 });
@@ -446,6 +446,184 @@ function startWeb() {
     const overflowTablet = await admin2.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     check('平板端：无横向溢出', overflowTablet <= 1, `${overflowTablet}px`);
     await admin2.close();
+
+    /* ---------- 11. 后台用户管理：重置登录密码 + 级联删除 ---------- */
+    console.log('\n【11】后台用户管理：重置登录密码 + 级联删除用户');
+    const adm3 = await browser.newPage();
+    await adm3.setViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
+    await adm3.goto(`${WEB}/admin.html`, { waitUntil: 'load' });
+    await wait(1500);
+
+    // 造一个待管理用户（含自选 + 持仓 + 每日快照），随后切回管理员会话
+    const target = await adm3.evaluate(async () => {
+      const username = `todel_${Math.random().toString(36).slice(2, 7)}`;
+      const reg = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password: 'del123456' }),
+      });
+      if (!reg.ok) return null;
+      await fetch('/api/watchlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: '161725', name: '招商中证白酒指数(LOF)A' }),
+      });
+      await fetch('/api/positions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: '161725', name: '招商中证白酒指数(LOF)A', amount: 1000, profit: 10 }),
+      });
+      await fetch('/api/portfolio'); // 触发该用户每日快照，便于验证级联
+      await fetch('/api/auth/logout', { method: 'POST' });
+      const back = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'root', password: 'root' }),
+      });
+      return { username, adminAgain: back.ok };
+    });
+    check('已创建待管理用户并切回管理员', Boolean(target?.username) && target?.adminAgain, JSON.stringify(target));
+
+    const statsBefore = await adm3.evaluate(async () => (await fetch('/api/admin/stats')).json());
+    await adm3.reload({ waitUntil: 'load' });
+    await wait(2200);
+
+    // --- 重置密码 ---
+    await adm3.click(`button[aria-label="重置 ${target.username} 的密码"]`);
+    await wait(700);
+    const resetModal = await adm3.$eval('body', (el) => el.innerText);
+    check('弹出「重置登录密码」窗口', resetModal.includes('重置登录密码'), resetModal.slice(0, 60));
+    await adm3.click('button[aria-label="生成随机密码"]');
+    await wait(300);
+    const generated = await adm3.$eval('input[aria-label="新密码"]', (el) => el.value);
+    check('可一键生成随机密码（12 位）', generated.length === 12, generated);
+    await adm3.click('button[aria-label="确认重置密码"]');
+    await wait(1800);
+    const resetNotice = await adm3.$eval('[data-testid="admin-notice"]', (el) => el.innerText).catch(() => '');
+    check('重置成功并给出提示', resetNotice.includes('已重置'), resetNotice);
+    const shownPassword = await adm3.$eval('[data-testid="new-password"]', (el) => el.textContent.trim()).catch(() => '');
+    check('成功后弹层保持打开并回显新密码（便于转达）', shownPassword === generated, `${shownPassword} vs ${generated}`);
+    await adm3.click('button[aria-label="关闭"]');
+    await wait(400);
+    const modalGone = await adm3.$('[data-testid="new-password"]');
+    check('关闭后弹层消失', modalGone === null);
+
+    const pwCheck = await adm3.evaluate(
+      async ({ username, password }) => {
+        await fetch('/api/auth/logout', { method: 'POST' });
+        const oldPw = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password: 'del123456' }),
+        });
+        const newPw = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        });
+        return { oldStatus: oldPw.status, newStatus: newPw.status };
+      },
+      { username: target.username, password: generated },
+    );
+    check('重置后旧密码失效、新密码可登录', pwCheck.oldStatus === 401 && pwCheck.newStatus === 200, JSON.stringify(pwCheck));
+
+    // 切回管理员并重载后台页
+    await adm3.evaluate(async () => {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'root', password: 'root' }),
+      });
+    });
+    await adm3.reload({ waitUntil: 'load' });
+    await wait(2200);
+
+    // --- 级联删除 ---
+    const adminDeleteDisabled = await adm3.$eval('button[aria-label="删除用户 root"]', (el) => el.disabled).catch(() => null);
+    check('管理员账号的删除按钮为禁用态', adminDeleteDisabled === true, String(adminDeleteDisabled));
+
+    await adm3.click(`button[aria-label="删除用户 ${target.username}"]`);
+    await wait(700);
+    const deleteModal = await adm3.$eval('body', (el) => el.innerText);
+    check('删除弹层说明级联范围', deleteModal.includes('级联删除') && deleteModal.includes('自选基金'), deleteModal.slice(0, 120));
+    const submitDisabled = await adm3.$eval('button[aria-label="确认删除用户"]', (el) => el.disabled);
+    check('未输入用户名时确认按钮禁用', submitDisabled === true);
+    await adm3.type('input[aria-label="输入用户名确认删除"]', target.username);
+    await wait(300);
+    await adm3.click('button[aria-label="确认删除用户"]');
+    await wait(2000);
+    const deleteNotice = await adm3.$eval('[data-testid="admin-notice"]', (el) => el.innerText).catch(() => '');
+    check('删除成功并提示级联清理', deleteNotice.includes('已删除'), deleteNotice);
+
+    const afterDelete = await adm3.evaluate(async () => (await fetch('/api/admin/stats')).json());
+    check(
+      '级联：该用户持仓与每日快照从统计中消失',
+      afterDelete.stats.positionsItems < statsBefore.stats.positionsItems &&
+        afterDelete.stats.positionDailyRows < statsBefore.stats.positionDailyRows,
+      `before=${statsBefore.stats.positionsItems}/${statsBefore.stats.positionDailyRows} after=${afterDelete.stats.positionsItems}/${afterDelete.stats.positionDailyRows}`,
+    );
+    const goneInList = await adm3.evaluate(async (u) => {
+      const r = await fetch(`/api/admin/users?q=${encodeURIComponent(u)}`);
+      return (await r.json()).total;
+    }, target.username);
+    check('列表中已无该用户', goneInList === 0, String(goneInList));
+
+    const loginGone = await adm3.evaluate(
+      async ({ username, password }) => {
+        const r = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        });
+        return r.status;
+      },
+      { username: target.username, password: generated },
+    );
+    check('被删用户无法再登录', loginGone === 401, String(loginGone));
+
+    await adm3.screenshot({ path: path.join(ROOT, 'shots', '后台管理-用户操作.png') });
+    await adm3.close();
+
+    /* ---------- 12. 系统运营数据：点击指标卡查看明细 ---------- */
+    console.log('\n【12】系统运营数据：点击指标卡下钻明细');
+    const adm4 = await browser.newPage();
+    await adm4.setViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
+    await adm4.goto(`${WEB}/admin.html`, { waitUntil: 'load' });
+    await wait(2500);
+
+    const statsForMetric = await adm4.evaluate(async () => (await fetch('/api/admin/stats')).json());
+    await adm4.click('button[aria-label="查看注册用户明细"]');
+    await wait(1600);
+    const metricModal = await adm4.$eval('[data-testid="metric-detail"]', (el) => el.innerText).catch(() => '');
+    check('点击指标卡弹出明细弹层', metricModal.includes('注册用户') && metricModal.includes('共'), metricModal.slice(0, 80));
+    check('明细含列头与接口口径', metricModal.includes('用户名') && metricModal.includes('注册时间'));
+    const userRows = await adm4.$$eval('[data-testid="metric-detail"] tbody tr', (els) => els.length);
+    check('注册用户明细行数与统计一致', userRows === statsForMetric.stats.users, `${userRows} vs ${statsForMetric.stats.users}`);
+    await adm4.screenshot({ path: path.join(ROOT, 'shots', '后台管理-指标明细.png') });
+
+    await adm4.click('button[aria-label="关闭明细"]');
+    await wait(500);
+    check('关闭后明细弹层消失', (await adm4.$('[data-testid="metric-detail"]')) === null);
+
+    await adm4.click('button[aria-label="查看自选条数明细"]');
+    await wait(1600);
+    const wlRows = await adm4.$$eval('[data-testid="metric-detail"] tbody tr', (els) => els.length);
+    check('自选条数明细行数与统计一致', wlRows === statsForMetric.stats.watchlistItems, `${wlRows} vs ${statsForMetric.stats.watchlistItems}`);
+    await adm4.click('button[aria-label="关闭明细"]');
+    await wait(400);
+
+    // 手机端：明细弹层自适应且不横向溢出
+    await adm4.setViewport({ width: 360, height: 800, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
+    await wait(900);
+    await adm4.click('button[aria-label="查看持仓条数明细"]');
+    await wait(1600);
+    const metricGoneOnMobile = await adm4.$eval('[data-testid="metric-detail"]', (el) => el.offsetParent !== null).catch(() => false);
+    check('手机端：明细弹层正常展示', metricGoneOnMobile);
+    const metricOverflow = await adm4.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    check('手机端：明细弹层无横向溢出', metricOverflow <= 1, `${metricOverflow}px`);
+    await adm4.screenshot({ path: path.join(ROOT, 'shots', '后台管理-指标明细-手机.png') });
+    await adm4.close();
 
     check('无 JS 运行时错误', jsErrors.length === 0, jsErrors.slice(0, 3).join(' | '));
 
