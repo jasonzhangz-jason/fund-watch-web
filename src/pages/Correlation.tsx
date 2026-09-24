@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Activity, LogIn, RefreshCw } from 'lucide-react';
 import { NavBar, PhoneFrame } from '../components/chrome';
 import { Card, EmptyState } from '../components/ui';
+import TrendCompare from '../components/TrendCompare';
 import { useAuth } from '../state/auth';
 import { api, type Correlation } from '../lib/api';
 
@@ -186,6 +187,38 @@ export default function CorrelationPage() {
                 </Card>
               ))}
             </div>
+
+            {/* 归一化走势对比：直观看出「走势有多像」 */}
+            {data.dates && data.series && data.series.length > 1 ? (
+              <div className="mt-3 px-3">
+                <Card className="px-3 py-3">
+                  <div className="flex items-baseline justify-between">
+                    <p className="text-[13px] font-medium text-ink">走势对比（起点 = 100）</p>
+                    <span className="text-[11px] text-ink-3">归一化后可直观比较</span>
+                  </div>
+                  <div className="mt-1.5">
+                    <TrendCompare dates={data.dates} series={data.series} />
+                  </div>
+                  <ul data-testid="trend-changes" className="mt-2 space-y-0.5 border-t border-line pt-2 text-[11.5px] text-ink-2">
+                    {data.series.map((s, i) => (
+                      <li key={s.code} className="flex items-center gap-1.5">
+                        <span className="tnum w-[14px] shrink-0 text-ink-3">{i + 1}</span>
+                        <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                        <span
+                          className={['tnum shrink-0 font-medium', s.totalChange >= 0 ? 'text-up' : 'text-down'].join(' ')}
+                        >
+                          {s.totalChange >= 0 ? '+' : ''}
+                          {s.totalChange.toFixed(2)}%
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-1.5 text-[11px] leading-[16px] text-ink-3">
+                    区间涨跌为分析窗口内的累计变化；曲线越贴合说明两只基金走势越同步（相关系数越高）。
+                  </p>
+                </Card>
+              </div>
+            ) : null}
 
             {/* 相关性矩阵 */}
             <div className="mt-3 px-3">

@@ -46,10 +46,12 @@ const PAGES = [
   { name: '自选', hash: '#/watchlist' },
   { name: '我的', hash: '#/mine' },
   { name: '搜索', hash: '#/search' },
-  { name: '详情', hash: '#/fund/006274' },
+  { name: '详情', hash: '#/fund/006274', waitMs: 3000 },
   { name: '添加持仓', hash: '#/add' },
   { name: '修改持仓', hash: '#/edit' },
   { name: '账本设置', hash: '#/settings' },
+  { name: '持仓穿透', hash: '#/lookthrough', waitMs: 3000 },
+  { name: '基金相关性分析', hash: '#/correlation', waitMs: 3000 },
   { name: '后台管理', url: '/admin.html' },
 ];
 
@@ -215,7 +217,7 @@ const PROBE = () => {
         } else {
           await page.goto(`${WEB}/${p.hash}`, { waitUntil: 'load' });
         }
-        await wait(p.name === '详情' ? 3000 : 1400);
+        await wait(p.waitMs ?? 1400);
         const res = await page.evaluate(PROBE);
         const label = `${vp.name} · ${p.name}`;
         check(`${label} 无横向溢出`, res.docOverflow <= 1, `溢出 ${res.docOverflow}px`);

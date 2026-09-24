@@ -172,6 +172,33 @@ try {
   check('矩阵每个值都与独立复算一致（误差 < 1e-4）', maxDiff < 1e-4, `最大偏差 ${maxDiff}`);
   check('相关系数不是全 0/全 1（确实算出了差异）', c.pairs.some((p) => Math.abs(p.corr) > 0.01));
 
+  /* ---------- 归一化走势序列（走势对比图数据） ---------- */
+  console.log('\n【3b】归一化走势序列（起点 = 100）');
+  check('返回共同交易日日期数组', Array.isArray(c.dates) && c.dates.length === c.pointCount, `${c.dates?.length} vs ${c.pointCount}`);
+  check('每只基金都有走势序列', Array.isArray(c.series) && c.series.length === 4, `${c.series?.length}`);
+  check(
+    '每条序列点数 = 共同交易日数',
+    c.series.every((s) => s.points.length === c.pointCount),
+    JSON.stringify(c.series.map((s) => s.points.length)),
+  );
+  check('每条序列起点均为 100', c.series.every((s) => Math.abs(s.points[0] - 100) < 1e-6));
+  check(
+    '区间涨跌 = 末值 - 100',
+    c.series.every((s) => Math.abs(s.totalChange - (s.points[s.points.length - 1] - 100)) < 0.02),
+    JSON.stringify(c.series.map((s) => s.totalChange)),
+  );
+  // 与独立复算的净值序列比对（series[i].points[k] = nav_k / nav_0 × 100）
+  let seriesDiff = 0;
+  for (let i = 0; i < 4; i += 1) {
+    const base = series[i].byDate.get(common[0]);
+    for (let k = 0; k < common.length; k += 1) {
+      const expect = (series[i].byDate.get(common[k]) / base) * 100;
+      seriesDiff = Math.max(seriesDiff, Math.abs(expect - c.series[i].points[k]));
+    }
+  }
+  check('走势序列与独立复算的净值一致（误差 < 0.01）', seriesDiff < 0.01, `最大偏差 ${seriesDiff}`);
+  check('日期与序列一一对应（首尾一致）', c.dates[0] === c.startDate && c.dates[c.dates.length - 1] === c.endDate);
+
   /* ---------- 窗口与参数 ---------- */
   console.log('\n【4】窗口参数与边界');
   const w20 = await req('GET', '/api/portfolio/correlation?days=20');

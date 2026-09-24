@@ -122,6 +122,18 @@ async function buildCorrelation(userId, opts = {}) {
     }),
   );
 
+  /* 5) 归一化走势序列（起点 = 100）：
+   *    各基金净值量级不同（1.x vs 3.x），归一化后画在同一张图上才能直观比较走势。 */
+  const bases = series.map((f) => f.byDate.get(commonDates[0]));
+  const seriesOut = series.map((f, i) => ({
+    code: f.code,
+    name: f.name,
+    /** 与 dates 一一对应的归一化净值（起点 100） */
+    points: commonDates.map((d) => round((f.byDate.get(d) / bases[i]) * 100, 3)),
+    /** 区间累计涨跌 %（末值 - 100） */
+    totalChange: round((f.byDate.get(commonDates[commonDates.length - 1]) / bases[i]) * 100 - 100, 2),
+  }));
+
   const pairs = [];
   for (let i = 0; i < n; i += 1) {
     for (let j = i + 1; j < n; j += 1) {
@@ -150,6 +162,10 @@ async function buildCorrelation(userId, opts = {}) {
     fundCount: n,
     returnCount: series[0].rets.length,
     funds: series.map((f) => ({ code: f.code, name: f.name, amount: round(f.amount, 2) })),
+    /** 共同交易日（升序），与 series[].points 一一对应 */
+    dates: commonDates,
+    /** 归一化走势（起点 100，用于绘制走势对比图） */
+    series: seriesOut,
     matrix,
     pairs,
     mostSimilar: pairs[0] || null,

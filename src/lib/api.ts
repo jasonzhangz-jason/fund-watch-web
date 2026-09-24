@@ -147,6 +147,10 @@ export type Correlation = {
   endDate: string | null;
   fundCount: number;
   funds: Array<{ code: string; name: string; amount: number }>;
+  /** 共同交易日（升序），与 series[].points 一一对应 */
+  dates?: string[];
+  /** 归一化走势序列（起点 = 100），用于绘制走势对比图 */
+  series?: Array<{ code: string; name: string; points: number[]; totalChange: number }>;
   /** N×N 相关系数矩阵（null = 无法计算，如无波动） */
   matrix: Array<Array<number | null>>;
   pairs: CorrelationPair[];

@@ -173,10 +173,16 @@ function startWeb() {
     await page.type('input[aria-label="用户名"]', user);
     await page.type('input[aria-label="密码"]', pwd);
     await page.click('button ::-p-text(注册并登录)');
-    await wait(1500);
+    // 轮询等待会话建立（机器负载高时固定等待不可靠）
+    let meApi = { user: null };
+    for (let i = 0; i < 40; i++) {
+      await wait(250);
+      meApi = await page.evaluate(async () => (await fetch('/api/auth/me')).json());
+      if (meApi.user?.username === user) break;
+    }
+    await wait(800); // 让前端把登录态渲染出来
     const afterReg = await page.$eval('body', (b) => b.innerText);
     check('注册成功后登录引导消失', !afterReg.includes('登录后自选会保存到账号'), afterReg.slice(0, 60));
-    const meApi = await page.evaluate(async () => (await fetch('/api/auth/me')).json());
     check('会话已建立（/api/auth/me 返回该用户）', meApi.user?.username === user, JSON.stringify(meApi.user));
 
     /* ---------- 3. 搜索并加入自选 ---------- */
@@ -247,7 +253,7 @@ function startWeb() {
     await wait(1800);
     const mineText = await page.$eval('body', (b) => b.innerText);
     const me = await page.evaluate(async () => (await fetch('/api/auth/me')).json());
-    check('username 与接口一致', mineText.includes(me.user.username));
+    check('username 与接口一致', Boolean(me.user) && mineText.includes(me.user.username), JSON.stringify(me.user));
     check('role 渲染为中文', mineText.includes('普通用户') || mineText.includes('管理员'));
     check('普通用户看不到「后台管理」按钮', !mineText.includes('后台管理'));
     check('「我的」页已无「后台概览」展示栏', !mineText.includes('后台概览'));
@@ -859,6 +865,19 @@ function startWeb() {
     check('矩阵在页面上左右对称', symmetrical, JSON.stringify(cells));
     const onScreen = cells.map((t) => (t === '—' ? null : Number(t)));
     check('矩阵数值与接口一致', onScreen.every((v, k) => Math.abs(v - cd.matrix[Math.floor(k / n)][k % n]) < 0.005), JSON.stringify(onScreen));
+
+    // 归一化走势对比图（起点 100 的多条折线 + 图例）
+    const paths = await corrPage.$$eval('[data-testid="trend-compare"] path', (els) => els.length);
+    check('走势对比图渲染出每条基金的曲线', paths === cd.series.length, `${paths} vs ${cd.series.length}`);
+    const legend = await corrPage.$$eval('[data-testid="trend-legend"] li', (els) => els.map((e) => e.innerText.replace(/\s+/g, ' ').trim()));
+    check('走势图图例与基金一一对应', legend.length === cd.series.length, JSON.stringify(legend).slice(0, 120));
+    const changes = await corrPage.$$eval('[data-testid="trend-changes"] li', (els) => els.map((e) => e.innerText.replace(/\s+/g, ' ').trim()));
+    check(
+      '区间涨跌列表与接口一致',
+      changes.length === cd.series.length &&
+        cd.series.every((s, i) => changes[i]?.includes(`${s.totalChange >= 0 ? '+' : ''}${s.totalChange.toFixed(2)}%`)),
+      JSON.stringify({ changes, series: cd.series.map((s) => s.totalChange) }).slice(0, 160),
+    );
 
     // 切换窗口：共同交易日应变化并与接口一致
     await corrPage.click('button[aria-label="近120个交易日"]');
