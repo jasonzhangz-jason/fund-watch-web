@@ -738,7 +738,20 @@ function startWeb() {
     const mineText2 = await ltPage.$eval('body', (el) => el.innerText);
     check('我的页不再展示持仓明细', !mineText2.includes('我的持仓明细'), mineText2.slice(0, 80));
     check('我的页提供「持仓穿透」入口', mineText2.includes('持仓穿透'));
+    check('「我的自选」下方提供「我的持仓」入口', mineText2.includes('我的自选') && mineText2.includes('我的持仓'));
 
+    // 「我的持仓」显示持仓基金数，点击跳转账本
+    const posEntryHint = await ltPage.$eval('button[aria-label="我的持仓"]', (el) => el.innerText.replace(/[^\d]/g, ''));
+    check('「我的持仓」显示持仓基金数 = 3', posEntryHint === '3', posEntryHint);
+    await ltPage.click('button[aria-label="我的持仓"]');
+    await wait(2500);
+    const ledgerUrl = ltPage.url();
+    const ledgerText2 = await ltPage.$eval('body', (el) => el.innerText);
+    check('点击「我的持仓」跳转到账本主页', ledgerUrl.endsWith('#/') || ledgerUrl.endsWith('#'), ledgerUrl);
+    check('账本页展示账户资产与持仓', ledgerText2.includes('账户资产') && ledgerText2.includes('¥'), ledgerText2.slice(0, 70));
+
+    await ltPage.goto(`${WEB}/#/mine`, { waitUntil: 'load' });
+    await wait(2000);
     await ltPage.click('button[aria-label="持仓穿透"]');
     await wait(6000);
     check('进入持仓穿透页', ltPage.url().includes('#/lookthrough'), ltPage.url());
@@ -785,6 +798,82 @@ function startWeb() {
     check('点击穿透中的基金进入详情页', ltPage.url().includes('#/fund/'), ltPage.url());
     check('详情页标题为对应基金', (await ltPage.$eval('body', (el) => el.innerText)).includes(topStock.funds[0].name.slice(0, 6)));
     await ltPage.close();
+
+    /* ---------- 14. 我的页：基金相关性分析 ---------- */
+    console.log('\n【14】' + '基金相关性分析：走势相似程度（矩阵 / 最相似 / 最分散）');
+    const corrPage = await browser.newPage();
+    corrPage.on('pageerror', (e) => jsErrors.push(`[correlation] ${e.message}`));
+    await corrPage.setViewport({ width: 393, height: 852, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+    await corrPage.goto(`${WEB}/#/`, { waitUntil: 'load' });
+
+    const corrUser = await corrPage.evaluate(async () => {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      const username = `cr_${Math.random().toString(36).slice(2, 7)}`;
+      const reg = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password: 'cr123456' }),
+      });
+      if (!reg.ok) return null;
+      const items = [
+        { code: '161725', name: '招商中证白酒指数(LOF)A', amount: 60000 },
+        { code: '163406', name: '兴全合润混合A', amount: 30000 },
+        { code: '006274', name: '圆信永丰医药健康A', amount: 10000 },
+        { code: '005827', name: '易方达蓝筹精选混合', amount: 20000 },
+      ];
+      for (const it of items) {
+        await fetch('/api/positions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...it, profit: 0 }),
+        });
+      }
+      return { username };
+    });
+    check('已创建相关性测试账号（4 只基金）', Boolean(corrUser?.username), JSON.stringify(corrUser));
+
+    await corrPage.goto(`${WEB}/#/mine`, { waitUntil: 'load' });
+    await corrPage.reload({ waitUntil: 'load' });
+    await wait(2600);
+    const mineText3 = await corrPage.$eval('body', (el) => el.innerText);
+    check('我的页提供「基金相关性分析」入口', mineText3.includes('基金相关性分析'));
+
+    await corrPage.click('button[aria-label="基金相关性分析"]');
+    await wait(9000);
+    check('进入基金相关性分析页', corrPage.url().includes('#/correlation'), corrPage.url());
+
+    const corrApi = await corrPage.evaluate(async () => (await fetch('/api/portfolio/correlation?days=60')).json());
+    const cd = corrApi.correlation;
+    const corrText = await corrPage.$eval('body', (el) => el.innerText);
+    check('展示平均相关性与区间', corrText.includes('平均相关性') && corrText.includes(`${cd.pointCount} 天`), corrText.slice(0, 90));
+    check('平均相关性与接口一致', corrText.includes(cd.avgCorr.toFixed(2)), `期望 ${cd.avgCorr.toFixed(2)}`);
+    check('展示最相似 / 最分散组合', corrText.includes('最相似') && corrText.includes('最分散'));
+    check('最相似组合名称与接口一致', corrText.includes(cd.mostSimilar.aName.slice(0, 5)) && corrText.includes(cd.mostSimilar.corr.toFixed(2)));
+    check('最分散组合相关性一致', corrText.includes(cd.mostDiverse.corr.toFixed(2)), `期望 ${cd.mostDiverse.corr.toFixed(2)}`);
+
+    const cells = await corrPage.$$eval('td[data-testid^="corr-"]', (els) => els.map((e) => e.textContent.trim()));
+    check('矩阵为 N×N（16 格）', cells.length === cd.fundCount ** 2, `${cells.length} vs ${cd.fundCount ** 2}`);
+    const n = cd.fundCount;
+    check('对角线均为 1.00', Array.from({ length: n }, (_, i) => cells[i * n + i]).every((t) => t === '1.00'), JSON.stringify(Array.from({ length: n }, (_, i) => cells[i * n + i])));
+    const symmetrical = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => cells[i * n + j] === cells[j * n + i])).flat().every(Boolean);
+    check('矩阵在页面上左右对称', symmetrical, JSON.stringify(cells));
+    const onScreen = cells.map((t) => (t === '—' ? null : Number(t)));
+    check('矩阵数值与接口一致', onScreen.every((v, k) => Math.abs(v - cd.matrix[Math.floor(k / n)][k % n]) < 0.005), JSON.stringify(onScreen));
+
+    // 切换窗口：共同交易日应变化并与接口一致
+    await corrPage.click('button[aria-label="近120个交易日"]');
+    await wait(9000);
+    const corrApi120 = await corrPage.evaluate(async () => (await fetch('/api/portfolio/correlation?days=120')).json());
+    const t120 = await corrPage.$eval('body', (el) => el.innerText);
+    check(
+      '切换近 120 日后样本数变化且与接口一致',
+      t120.includes(`${corrApi120.correlation.pointCount} 天`) && corrApi120.correlation.pointCount > cd.pointCount,
+      `${corrApi120.correlation.pointCount} vs ${cd.pointCount}`,
+    );
+    const overflowCorr = await corrPage.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    check('相关性页无横向溢出', overflowCorr <= 1, `${overflowCorr}px`);
+    await corrPage.screenshot({ path: path.join(ROOT, 'shots', '基金相关性分析.png') });
+    await corrPage.close();
 
     console.log(`\n结果：通过 ${pass} / 失败 ${fail}`);
   } catch (e) {

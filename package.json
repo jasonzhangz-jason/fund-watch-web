@@ -26,6 +26,7 @@
     "test:api": "node scripts/test-api.mjs",
     "test:live": "node scripts/test-live-ui.cjs",
     "test:portfolio": "node scripts/test-portfolio.mjs",
+    "test:correlation": "node scripts/test-correlation.mjs",
     "test:docs": "node scripts/test-docs.mjs",
     "test:overflow": "node scripts/check-overflow.cjs",
     "test:persistence": "node scripts/test-persistence.mjs",

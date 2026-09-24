@@ -153,7 +153,7 @@ export default function CorrelationPage() {
             </div>
             {interpretation ? <p className="mt-2 text-[12px] leading-[18px] text-ink-2">{interpretation}</p> : null}
             <p className="mt-1.5 text-[11px] leading-[16px] text-ink-3">
-              口径：对**日收益率**（净值环比涨跌）求皮尔逊相关系数，并只使用所有基金都有净值的共同交易日；
+              口径：对<b>日收益率</b>（净值环比涨跌）求皮尔逊相关系数，并只使用所有基金都有净值的共同交易日；
               区间越接近 1 越同步，0 附近为不相关，负值表示反向波动。
             </p>
           </Card>

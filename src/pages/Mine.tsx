@@ -158,13 +158,18 @@ export default function Mine() {
               />
             </div>
 
-            {/* 我的自选 / 持仓穿透 入口（持仓明细不再在本页平铺展示） */}
+            {/* 我的自选 / 我的持仓 / 持仓穿透 / 相关性分析（持仓明细不再在本页平铺展示） */}
             <div className="mt-2 px-3">
               <Card className="divide-y divide-line px-0">
                 <Entry
                   label="我的自选"
                   hint={`${serverMode ? pf!.watchCount : watchItems.length} 只`}
                   onClick={() => navigate('/watchlist')}
+                />
+                <Entry
+                  label="我的持仓"
+                  hint={`${holdings.length} 只`}
+                  onClick={() => navigate('/')}
                 />
                 <Entry
                   label="持仓穿透"

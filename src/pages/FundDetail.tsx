@@ -241,7 +241,6 @@ export default function FundDetail() {
                   <span className="flex-1">股票名称</span>
                   <span className="w-[70px] text-right">涨跌幅</span>
                   <span className="w-[70px] text-right">持仓占比</span>
-                  <span className="w-[84px] text-right">持仓市值</span>
                 </div>
                 <ul className="mt-1">
                   {holdings!.map((h, i) => (
@@ -261,9 +260,6 @@ export default function FundDetail() {
                         </span>
                         <span className="tnum w-[70px] text-right text-ink">
                           {h.weight === null ? '—' : `${h.weight.toFixed(2)}%`}
-                        </span>
-                        <span className="tnum w-[84px] text-right text-ink">
-                          {h.marketValue === null ? '—' : `${h.marketValue.toLocaleString('zh-CN')}万`}
                         </span>
                       </div>
                       {i < holdings!.length - 1 ? <div className="border-b border-line" /> : null}
