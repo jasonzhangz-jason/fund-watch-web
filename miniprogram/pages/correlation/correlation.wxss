@@ -1,0 +1,46 @@
+.page { min-height: 100vh; background: var(--page-bg); }
+.win-bar { display: flex; align-items: center; padding: 20rpx 30rpx 6rpx; }
+.chip { margin-left: 16rpx; padding: 6rpx 20rpx; border-radius: 30rpx; font-size: 24rpx; color: var(--ink-2); background: #fff; }
+.chip.on { background: var(--primary-tint); color: var(--primary); font-weight: 600; }
+.avg { margin-top: 10rpx; }
+.right { align-items: flex-end; }
+.range { margin-top: 6rpx; }
+.interp { margin-top: 16rpx; line-height: 1.6; }
+.note { margin-top: 14rpx; line-height: 1.6; }
+.two-col { display: flex; padding: 18rpx 24rpx 0; }
+.col-card { flex: 1; }
+.col-card:first-child { margin-right: 20rpx; }
+.mv { margin-top: 10rpx; }
+.mv-name { margin-top: 10rpx; line-height: 1.5; }
+.legend { display: flex; flex-wrap: wrap; margin-top: 14rpx; }
+.legend-item { display: flex; align-items: center; margin: 0 24rpx 10rpx 0; max-width: 320rpx; }
+.legend-dot { width: 24rpx; height: 6rpx; border-radius: 3rpx; margin-right: 10rpx; }
+.gap-left { margin-left: 30rpx; }
+.changes { margin-top: 16rpx; border-top: 1rpx solid var(--line); padding-top: 16rpx; }
+.change-row { display: flex; align-items: center; padding: 6rpx 0; }
+.idx { width: 32rpx; }
+.matrix { margin-top: 18rpx; }
+.m-row { display: flex; align-items: center; margin-bottom: 6rpx; }
+.m-label { width: 200rpx; display: flex; align-items: center; font-size: 22rpx; color: var(--ink-2); padding-right: 10rpx; }
+.m-label text:first-child { margin-right: 8rpx; color: var(--ink-3); }
+.m-head .m-col { color: var(--ink-3); font-size: 22rpx; }
+.m-cell {
+  flex: 1;
+  height: 56rpx;
+  line-height: 56rpx;
+  text-align: center;
+  border-radius: 8rpx;
+  margin-left: 6rpx;
+  font-size: 22rpx;
+  font-variant-numeric: tabular-nums;
+}
+.legend-row { display: flex; align-items: center; margin-top: 18rpx; }
+.pair { display: flex; align-items: center; padding: 14rpx 0; }
+.pair-bar { height: 8rpx; background: #eff1f4; border-radius: 4rpx; margin-top: 10rpx; overflow: hidden; }
+.pair-bar-in { height: 8rpx; border-radius: 4rpx; }
+.pair-corr { width: 90rpx; text-align: right; }
+.pair-level { width: 120rpx; text-align: right; }
+.tags { display: flex; flex-wrap: wrap; margin-top: 14rpx; }
+.tag-item { background: var(--field); border-radius: 30rpx; padding: 6rpx 20rpx; font-size: 22rpx; color: var(--ink-2); margin: 0 12rpx 12rpx 0; }
+.err, .empty-tip { padding: 30rpx; }
+.bottom-space { height: 60rpx; }

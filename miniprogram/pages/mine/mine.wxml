@@ -1,0 +1,118 @@
+<view class="page">
+  <view class="safe-top" style="height: {{statusBarHeight}}px"></view>
+
+  <!-- 账号卡 -->
+  <view class="page-pad top-pad">
+    <view class="card card-pad">
+      <block wx:if="{{user}}">
+        <view class="row">
+          <view class="avatar center">{{user.username[0]}}</view>
+          <view class="flex-1">
+            <view class="ellipsis fs-34 bold">{{user.username}}</view>
+            <view class="fs-24 t-ink2 role-line">{{user.role === 'admin' ? '管理员' : '普通用户'}} · 会话已登录</view>
+          </view>
+        </view>
+      </block>
+      <block wx:else>
+        <view class="row">
+          <view class="avatar avatar-off center">?</view>
+          <view class="flex-1">
+            <view class="fs-34 bold">未登录</view>
+            <view class="fs-24 t-ink2 role-line">{{baseUrl ? '登录后自选与账本可跨设备同步' : '先在下方配置服务器地址'}}</view>
+          </view>
+        </view>
+
+        <view class="tabs">
+          <view class="tab {{mode === 'login' ? 'on' : ''}}" data-mode="login" bindtap="switchMode">登录</view>
+          <view class="tab {{mode === 'register' ? 'on' : ''}}" data-mode="register" bindtap="switchMode">注册</view>
+        </view>
+
+        <view class="field">
+          <text class="label">用户名</text>
+          <input class="input" value="{{username}}" bindinput="onUserInput" placeholder="3-20 位" placeholder-class="ph" />
+        </view>
+        <view class="field">
+          <text class="label">密码</text>
+          <input class="input" value="{{password}}" password bindinput="onPwdInput" placeholder="6 位以上" placeholder-class="ph" />
+        </view>
+        <view wx:if="{{formErr}}" class="fs-24 t-up err">{{formErr}}</view>
+        <view class="btn-primary submit {{busy ? 'disabled' : ''}}" bindtap="submit">
+          {{busy ? '处理中…' : (mode === 'login' ? '登录' : '注册并登录')}}
+        </view>
+      </block>
+    </view>
+  </view>
+
+  <!-- 资产概览（已登录） -->
+  <block wx:if="{{user}}">
+    <view class="page-pad">
+      <view class="card sum-card">
+        <view class="sum-cell" bindtap="goLedger">
+          <text class="tnum fs-38 bold">{{totalAmount}}</text>
+          <text class="fs-24 t-ink2">持仓合计（元）</text>
+        </view>
+        <view class="divider"></view>
+        <view class="sum-cell" bindtap="goLedger">
+          <text class="tnum fs-38 bold {{profitUp ? 't-up' : 't-down'}}">{{totalDayProfit}}</text>
+          <text class="fs-24 t-ink2">当日收益（估算）</text>
+        </view>
+      </view>
+      <status-line left="{{summaryText}}" right="60s 自动刷新"></status-line>
+    </view>
+
+    <!-- 入口 -->
+    <view class="page-pad">
+      <view class="card entries">
+        <view class="list-row entry" bindtap="goWatchlist">
+          <text class="flex-1 fs-30">我的自选</text>
+          <text class="fs-26 t-ink3">{{watchCount}} 只 ›</text>
+        </view>
+        <view class="list-sep"></view>
+        <view class="list-row entry" bindtap="goLedger">
+          <text class="flex-1 fs-30">我的持仓</text>
+          <text class="fs-26 t-ink3">{{positionCount}} 只 ›</text>
+        </view>
+        <view class="list-sep"></view>
+        <view class="list-row entry" bindtap="goLookthrough">
+          <text class="flex-1 fs-30">持仓穿透</text>
+          <text class="fs-26 t-ink3">按重仓股穿透到个股 ›</text>
+        </view>
+        <view class="list-sep"></view>
+        <view class="list-row entry" bindtap="goCorrelation">
+          <text class="flex-1 fs-30">基金相关性分析</text>
+          <text class="fs-26 t-ink3">账本基金走势相似程度 ›</text>
+        </view>
+      </view>
+    </view>
+  </block>
+
+  <!-- 服务器地址（未登录时也要能配置） -->
+  <view class="page-pad">
+    <view class="card card-pad">
+      <view class="fs-30 bold">服务器地址</view>
+      <view class="fs-24 t-ink3 base-desc">
+        小程序没有「同源」概念，必须填写后端 API 地址；线上需 HTTPS 并在小程序后台配置为合法域名（开发者工具可勾选「不校验合法域名」联调）。
+      </view>
+      <view class="field">
+        <input
+          class="input"
+          value="{{baseInput}}"
+          bindinput="onBaseInput"
+          placeholder="https://your-app.vercel.app"
+          placeholder-class="ph"
+        />
+      </view>
+      <view wx:if="{{baseMsg}}" class="fs-24 {{baseMsgOk ? 't-down' : 't-up'}} base-msg">{{baseMsg}}</view>
+      <view class="row base-actions">
+        <view class="btn-ghost flex-1" bindtap="testBase">{{testing ? '测试中…' : '测试连接'}}</view>
+        <view class="btn-primary flex-1 base-save" bindtap="saveBase">保存</view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{user}}" class="page-pad logout-wrap">
+    <view class="logout" bindtap="logout">退出登录</view>
+  </view>
+
+  <view class="tabbar-space"></view>
+</view>

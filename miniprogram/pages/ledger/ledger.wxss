@@ -1,0 +1,31 @@
+.page { min-height: 100vh; background: var(--page-bg); }
+.asset-line { margin-top: 10rpx; align-items: flex-end; }
+.head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 66rpx;
+  margin-top: 18rpx;
+  padding: 0 30rpx;
+}
+.plus { color: var(--ink-3); font-size: 34rpx; margin-right: 10rpx; }
+.count { margin-right: 16rpx; }
+.sort-group { flex-shrink: 0; }
+.sort-cell { width: 132rpx; text-align: right; font-size: 24rpx; color: var(--ink-3); }
+.sort-cell.rate { width: 110rpx; }
+.sort-cell.on { color: var(--primary); font-weight: 600; }
+.list { background: #fff; margin-top: 4rpx; }
+.meta { margin-top: 8rpx; }
+.tag {
+  font-size: 20rpx;
+  line-height: 30rpx;
+  padding: 0 10rpx;
+  border-radius: 6rpx;
+  margin-right: 12rpx;
+}
+.tag-on { color: var(--primary); background: var(--primary-tint); }
+.tag-off { color: var(--ink-2); background: #f1f2f4; }
+.rate-text { margin-left: auto; }
+.profit { width: 168rpx; text-align: right; }
+.chip-wrap { width: 144rpx; display: flex; justify-content: flex-end; margin-left: 12rpx; }
+.err { padding: 24rpx 30rpx; color: var(--up); }

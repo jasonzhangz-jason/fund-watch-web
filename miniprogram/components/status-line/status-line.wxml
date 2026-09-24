@@ -1,0 +1,4 @@
+<view class="status-line">
+  <text class="ellipsis flex-1">{{left}}</text>
+  <text class="right">{{right}}</text>
+</view>

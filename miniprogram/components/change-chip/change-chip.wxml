@@ -1,0 +1,1 @@
+<view class="chip {{cls}} {{small ? 'chip-sm' : ''}}">{{text}}</view>

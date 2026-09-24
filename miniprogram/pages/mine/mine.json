@@ -1,0 +1,6 @@
+{
+  "navigationStyle": "custom",
+  "usingComponents": {
+    "status-line": "/components/status-line/status-line"
+  }
+}

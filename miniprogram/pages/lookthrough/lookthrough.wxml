@@ -1,0 +1,88 @@
+<view class="page">
+  <view class="page-pad top-pad">
+    <view class="card card-pad">
+      <view class="row-between">
+        <view class="col">
+          <text class="fs-24 t-ink2">穿透资产(元)</text>
+          <text class="tnum bold fs-50 amount">{{coveredText}}</text>
+        </view>
+        <view class="col right">
+          <text class="fs-24 t-ink2">账户资产(元)</text>
+          <text class="tnum bold fs-30 t-ink2">{{totalText}}</text>
+        </view>
+      </view>
+
+      <view class="coverage">
+        <view class="row-between fs-24 t-ink2">
+          <text>重仓股覆盖 <text class="bold t-ink">{{coverageText}}</text></text>
+          <text>{{lt.stockCount}} 只个股 · {{lt.positionCount}} 只基金</text>
+        </view>
+        <view class="bar"><view class="bar-in" style="width: {{coverageWidth}}%"></view></view>
+      </view>
+
+      <view class="fs-22 t-ink3 note">
+        口径：个股穿透金额 = Σ（该基金持有金额 × 该股票占净值比例）。仅覆盖各基金前十大重仓股，
+        故覆盖率通常小于 100%，未覆盖部分为基金的其他持仓与现金。{{quarterText}}
+      </view>
+
+      <view class="btn-ghost refresh" bindtap="onRefresh">{{loading ? '穿透中…' : '重新穿透'}}</view>
+    </view>
+  </view>
+
+  <view class="sort-bar">
+    <text class="fs-24 t-ink3">排序</text>
+    <view class="chip {{sortBy === 'amount' ? 'on' : ''}}" data-key="amount" bindtap="onSort">穿透金额</view>
+    <view class="chip {{sortBy === 'ratio' ? 'on' : ''}}" data-key="ratio" bindtap="onSort">占账户比</view>
+    <view class="chip {{sortBy === 'fundCount' ? 'on' : ''}}" data-key="fundCount" bindtap="onSort">涉及基金数</view>
+  </view>
+
+  <view wx:if="{{err}}" class="fs-24 t-up err">{{err}}</view>
+  <view wx:if="{{!err && !items.length && !loading}}" class="fs-26 t-ink3 empty-tip">
+    暂无穿透数据：请先在「账本」添加持仓，且持仓基金需已披露重仓股
+  </view>
+
+  <view class="list">
+    <block wx:for="{{items}}" wx:key="code" wx:for-index="idx">
+      <view class="list-row" data-code="{{item.code}}" bindtap="onToggle">
+        <text class="tnum fs-24 t-ink3 rank">{{idx + 1}}</text>
+        <view class="flex-1">
+          <view class="ellipsis fs-30 bold">{{item.name}}</view>
+          <view class="fs-24 t-ink3 sub">{{item.code}} · {{item.fundCount}} 只基金持有</view>
+        </view>
+        <view class="col right">
+          <text class="tnum bold fs-30">¥{{item.amountText}}</text>
+          <text class="tnum fs-24 t-ink2">占账户 {{item.ratioText}}</text>
+        </view>
+        <text class="arrow">{{expanded === item.code ? '⌃' : '⌄'}}</text>
+      </view>
+
+      <view wx:if="{{expanded === item.code}}" class="funds">
+        <block wx:for="{{item.funds}}" wx:for-item="f" wx:key="code">
+          <view class="fund-row" data-code="{{f.code}}" catchtap="onOpenFund">
+            <view class="flex-1">
+              <view class="ellipsis fs-26">{{f.name}}</view>
+              <view class="fs-22 t-ink3">占净值 {{f.weightText}}</view>
+            </view>
+            <text class="tnum fs-26 bold">¥{{f.amountText}}</text>
+          </view>
+        </block>
+        <view class="fs-22 t-ink3 funds-note">
+          「占净值」为该股票在对应基金中的持仓占比；右侧金额为该基金为你贡献的穿透金额。
+        </view>
+      </view>
+      <view class="list-sep"></view>
+    </block>
+  </view>
+
+  <view wx:if="{{insufficient.length}}" class="page-pad">
+    <view class="card card-pad">
+      <view class="fs-26 bold">未纳入穿透的基金（{{insufficient.length}} 只）</view>
+      <view class="fs-22 t-ink3 note">以下基金暂未披露股票重仓明细（债基 / QDII / 新成立），未计入穿透金额：</view>
+      <view class="tags">
+        <view wx:for="{{insufficient}}" wx:key="code" class="tag-item">{{item.name}}</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="bottom-space"></view>
+</view>

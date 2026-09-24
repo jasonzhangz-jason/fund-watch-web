@@ -190,11 +190,18 @@ function startWeb() {
     await page.goto(`${WEB}/#/search`, { waitUntil: 'load' });
     await wait(600);
     await page.type('input[aria-label="搜索基金"]', '白酒');
-    await wait(2500);
-    const first = await page.$eval('ul li:nth-child(2)', (el) => el.innerText.replace(/\n/g, ' | '));
-    check('搜索到基金（真实接口）', /＋自选/.test(first), first);
-    const fundCode = (first.match(/(\d{6})/) || [])[1] || '';
-    const fundName = first.split('|')[0].trim();
+    // 轮询等待结果：上游搜索偶发较慢，固定等待会 flaky
+    let first = null;
+    for (let i = 0; i < 24; i++) {
+      await wait(500);
+      first = await page
+        .$eval('ul li:nth-child(2)', (el) => el.innerText.replace(/\n/g, ' | '))
+        .catch(() => null);
+      if (first && /＋自选/.test(first)) break;
+    }
+    check('搜索到基金（真实接口）', Boolean(first) && /＋自选/.test(first), String(first));
+    const fundCode = (String(first).match(/(\d{6})/) || [])[1] || '';
+    const fundName = String(first).split('|')[0].trim();
     await page.click('ul li:nth-child(2) button:last-child');
     await wait(1200);
 
@@ -451,6 +458,21 @@ function startWeb() {
     console.log('\n【9】管理员：头像栏「后台管理」→ 新标签页查看运营数据');
     await page.goto(`${WEB}/#/mine`, { waitUntil: 'load' });
     await wait(1000);
+    // 先确认后端可用（第 8 步重启过后端，避免把“服务没起来”误判成页面问题）
+    let apiAlive = false;
+    for (let i = 0; i < 10; i++) {
+      try {
+        const r = await fetch(`${API}/api/health`);
+        if (r.ok) {
+          apiAlive = true;
+          break;
+        }
+      } catch {
+        /* 继续重试 */
+      }
+      await wait(500);
+    }
+    check('步骤 9 前测试后端可访问', apiAlive);
     const becameAdmin = await page.evaluate(async () => {
       await fetch('/api/auth/logout', { method: 'POST' });
       const r = await fetch('/api/auth/login', {

@@ -1,0 +1,16 @@
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 138rpx;
+  height: 50rpx;
+  border-radius: 10rpx;
+  color: #fff;
+  font-size: 30rpx;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.chip-sm { width: 130rpx; height: 46rpx; font-size: 28rpx; }
+.chip-up { background: var(--up); }
+.chip-down { background: var(--down); }
+.chip-gray { background: #c8cdd6; }

@@ -1,0 +1,82 @@
+<view class="page">
+  <view class="safe-top" style="height: {{statusBarHeight}}px"></view>
+
+  <!-- 账户资产卡 -->
+  <view class="page-pad">
+    <view class="card card-pad">
+      <view class="row-between">
+        <text class="fs-24 t-ink2">账户资产(元)</text>
+        <text class="fs-24 t-ink2">当日总收益</text>
+      </view>
+      <view class="row-between asset-line">
+        <text class="tnum bold fs-50">{{totalAmount}}</text>
+        <text class="tnum bold fs-38 {{profitUp ? 't-up' : 't-down'}}">{{totalDayProfit}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 操作与排序表头 -->
+  <view class="head-row">
+    <view class="row" bindtap="onMenu">
+      <text class="plus">⊕</text>
+      <text class="fs-24 bold t-up count">{{upCount}} ↑</text>
+      <text class="fs-24 bold t-down count">{{downCount}} ↓</text>
+    </view>
+    <view class="row sort-group">
+      <view class="sort-cell {{sortKey === 'dayProfit' ? 'on' : ''}}" data-key="dayProfit" bindtap="onSort">
+        <text>当日收益</text>
+      </view>
+      <view class="sort-cell {{sortKey === 'dayChange' ? 'on' : ''}}" data-key="dayChange" bindtap="onSort">
+        <text>当日涨幅</text>
+      </view>
+      <view class="sort-cell rate {{sortKey === 'rate' ? 'on' : ''}}" data-key="rate" bindtap="onSort">
+        <text>收益率</text>
+      </view>
+    </view>
+  </view>
+
+  <status-line left="共 {{list.length}} 只 · 收益按金额×涨幅估算" right="{{sourceText}}"></status-line>
+
+  <view wx:if="{{err}}" class="err fs-24">{{err}}</view>
+
+  <!-- 未登录 / 无持仓 -->
+  <block wx:if="{{empty}}">
+    <empty-state
+      wx:if="{{!user}}"
+      title="登录后即可记账"
+      desc="账本、自选与收益快照都保存在账号里，换设备也能看到"
+      actionText="去登录 / 注册"
+      bind:action="onLogin"
+    ></empty-state>
+    <empty-state
+      wx:else
+      title="暂无持仓"
+      desc="添加持仓后即可查看当日收益与持仓收益率"
+      actionText="添加持仓"
+      bind:action="onAdd"
+    ></empty-state>
+  </block>
+
+  <!-- 持仓列表 -->
+  <view wx:else class="list">
+    <block wx:for="{{list}}" wx:key="code">
+      <view class="list-row" data-code="{{item.code}}" bindtap="onOpenFund">
+        <view class="flex-1">
+          <view class="ellipsis fs-28 bold">{{item.name}}</view>
+          <view class="row meta">
+            <text class="tag {{item.updated ? 'tag-on' : 'tag-off'}}">{{item.updated ? '已更新' : '待更新'}}</text>
+            <text class="tnum fs-24 t-ink2">¥{{item.amount}}</text>
+            <text class="tnum fs-24 rate-text {{item.rateUp === null ? 't-ink3' : (item.rateUp ? 't-up' : 't-down')}}">{{item.rateText}}</text>
+          </view>
+        </view>
+        <text class="tnum bold fs-30 profit {{item.dayProfitUp ? 't-up' : 't-down'}}">{{item.dayProfit}}</text>
+        <view class="chip-wrap">
+          <change-chip value="{{item.dayChange}}" muted="{{item.dayChangeMuted}}"></change-chip>
+        </view>
+      </view>
+      <view class="list-sep"></view>
+    </block>
+  </view>
+
+  <view class="tabbar-space"></view>
+</view>

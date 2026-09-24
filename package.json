@@ -28,6 +28,7 @@
     "test:portfolio": "node scripts/test-portfolio.mjs",
     "test:correlation": "node scripts/test-correlation.mjs",
     "test:docs": "node scripts/test-docs.mjs",
+    "test:miniprogram": "node scripts/test-miniprogram.mjs",
     "test:overflow": "node scripts/check-overflow.cjs",
     "test:persistence": "node scripts/test-persistence.mjs",
     "test:auth": "node scripts/test-auth.mjs",

@@ -1,0 +1,15 @@
+.page { min-height: 100vh; background: var(--page-bg); }
+.search-bar { padding: 20rpx 24rpx; background: #fff; }
+.search-input { height: 80rpx; background: var(--field); border-radius: 40rpx; padding: 0 30rpx; font-size: 28rpx; }
+.ph { color: var(--ink-3); }
+.msg, .tip { padding: 26rpx 30rpx; }
+.list { background: #fff; }
+.code { margin-top: 6rpx; }
+.fav {
+  flex-shrink: 0;
+  padding: 10rpx 24rpx;
+  border-radius: 30rpx;
+  background: var(--primary-tint);
+  color: var(--primary);
+  font-size: 24rpx;
+}

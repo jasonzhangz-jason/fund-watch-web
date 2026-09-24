@@ -1,0 +1,10 @@
+.status-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56rpx;
+  padding: 0 30rpx;
+  font-size: 22rpx;
+  color: var(--ink-3);
+}
+.right { flex-shrink: 0; padding-left: 16rpx; }

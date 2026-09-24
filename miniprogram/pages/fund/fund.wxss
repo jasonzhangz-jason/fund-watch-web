@@ -1,0 +1,29 @@
+.page { min-height: 100vh; background: var(--page-bg); }
+.hero { background: linear-gradient(180deg, var(--hero-from), var(--hero-to)); padding: 40rpx 30rpx 60rpx; }
+.hero-name, .hero-code { color: #fff; }
+.hero-code { margin-top: 10rpx; opacity: 0.85; }
+.fav-btn {
+  flex-shrink: 0;
+  height: 60rpx;
+  padding: 0 30rpx;
+  border-radius: 30rpx;
+  background: rgba(255, 255, 255, 0.4);
+  color: #fff;
+  font-size: 26rpx;
+  display: flex;
+  align-items: center;
+}
+.fav-btn.on { background: #fff; color: var(--primary); }
+.card-wrap { margin-top: -40rpx; }
+.metrics { display: flex; padding: 30rpx 0; }
+.metric { flex: 1; display: flex; flex-direction: column; align-items: center; }
+.metric text { margin-top: 8rpx; }
+.phases { display: flex; margin-top: 20rpx; }
+.phase { flex: 1; display: flex; flex-direction: column; align-items: center; }
+.phase text { margin-top: 8rpx; }
+.hold-row { display: flex; align-items: center; padding: 18rpx 0; border-bottom: 1rpx solid var(--line); }
+.w-140 { width: 150rpx; text-align: right; }
+.right { color: var(--ink); }
+.err { padding: 30rpx; }
+.empty-tip { margin-top: 20rpx; }
+.bottom-space { height: 60rpx; }

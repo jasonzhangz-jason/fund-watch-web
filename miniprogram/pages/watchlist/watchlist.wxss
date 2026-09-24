@@ -1,0 +1,20 @@
+.page { min-height: 100vh; background: var(--page-bg); }
+.tip-wrap { margin-top: 18rpx; }
+.tip { padding: 26rpx 30rpx; display: flex; flex-direction: column; }
+.tip text { margin-bottom: 8rpx; }
+.head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 66rpx;
+  margin-top: 18rpx;
+  padding: 0 30rpx;
+}
+.sort-group { flex-shrink: 0; }
+.sort-cell { width: 140rpx; text-align: right; font-size: 24rpx; color: var(--ink-3); }
+.sort-cell.on { color: var(--primary); font-weight: 600; }
+.list { background: #fff; margin-top: 4rpx; }
+.code { margin-top: 6rpx; }
+.w-140 { width: 160rpx; text-align: right; }
+.chip-wrap { width: 144rpx; display: flex; justify-content: flex-end; margin-left: 12rpx; }
+.err { padding: 24rpx 30rpx; color: var(--up); }

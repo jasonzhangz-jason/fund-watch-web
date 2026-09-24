@@ -90,7 +90,9 @@ fund-watch-web/
 │   ├── shoot.mjs               #   前端逐页截图（与参考截图比对）
 │   └── test-*.mjs  smoke-*.cjs  qr-*.mjs
 ├── legacy/index.html           # 归档版单页 UI（v1，84KB，仍由 8787 提供服务）
+├── miniprogram/                # 微信小程序版（原生 WXML/WXSS/JS，见 docs/miniprogram.md）
 ├── docs/backend-v1.md          # v1 后端完整文档（归档）
+├── docs/miniprogram.md         # 微信小程序完整文档（导入/配置/差异/校验）
 ├── data/fundwatch.db           # 本地 SQLite（自动创建，已忽略）
 └── shots/                      # 自检截图（pnpm shoot 生成，已忽略）
 ```
@@ -177,17 +179,18 @@ fund-watch-web/
 ```bash
 # 后端（全部本地可跑，自带临时数据库，不污染 data/）
 pnpm test:docs          # 文档一致性：README 的 ER 图/字段说明 vs 真实建表语句：43 项断言
+pnpm test:miniprogram   # 微信小程序工程结构与语义校验（页面/组件/接口契约/设计令牌/WXML）：23 项断言
 pnpm test:correlation   # 基金相关性分析：结构 + **独立复算皮尔逊系数逐值比对 + 走势序列校验** + 窗口/缓存：39 项断言
 pnpm test:auth          # 账号/自选/会话：20 项断言
 pnpm test:admin         # 后台权限/用户管理/运营统计 + 级联删除验证（会话/自选/持仓/快照）+ 10 项指标明细一致性：60 项断言
-pnpm test:portfolio     # 账本服务：账户资产/当日收益算术、每日快照落库、行情缓存、重启仍在：28 项断言
+pnpm test:portfolio     # 账本服务：账户资产/当日收益算术、每日快照落库、行情缓存、**持仓穿透口径**、重启仍在：44 项断言
 pnpm test:persistence   # 重启/崩溃/单文件迁移不丢数据：11 项断言
 pnpm test:api           # 数据接口回归（联网）
 pnpm test:qr            # 自研二维码编码器 vs 权威库：1280/1280 位一致
 pnpm test:qr:decode     # jsQR 真实解码：20/20
 
 # 前端 + 联调（真实浏览器跑，自带临时后端与前端）
-pnpm test:live          # 未登录无静态数据 → 注册 → 落库 → 下拉/60s 刷新 → 行点击跳详情 → 我的（含我的持仓跳账本）→ 重仓股 → 管理员后台 + 后台页三档自适应 + 重置密码/级联删除 + 指标下钻明细 + 持仓穿透 + 相关性分析（含走势对比图）→ 重启仍在：144 项断言
+pnpm test:live          # 未登录无静态数据 → 注册 → 落库 → 下拉/60s 刷新 → 行点击跳详情 → 我的（含我的持仓跳账本）→ 重仓股 → 管理员后台 + 后台页三档自适应 + 重置密码/级联删除 + 指标下钻明细 + 持仓穿透 + 相关性分析（含走势对比图）→ 重启仍在：145 项断言
 pnpm test:overflow      # 横向溢出与裁切回归：12 种视口（含安卓横屏）× 11 个页面（含穿透/相关性）：264 项断言
 
 # 归档版 UI（v1 单页界面，由 8787 提供）
@@ -413,6 +416,57 @@ erDiagram
 
 ---
 
+## 📱 微信小程序版（`miniprogram/`）
+
+与 Web 端共用**同一套后端**；小程序端是**原生 WXML/WXSS/JS**，无构建步骤、无 npm 依赖。
+
+```bash
+# 1) 启动后端
+pnpm start                       # → http://<电脑IP>:8787
+
+# 2) 微信开发者工具 → 导入项目 → 选择 miniprogram/ 目录
+#    详情 → 本地设置 → 勾选「不校验合法域名…」（本地 http 联调必需）
+
+# 3) 小程序底部「我的」→ 填服务器地址（如 http://192.168.1.5:8787）→ 测试连接 → 保存 → 登录
+```
+
+**目录结构**
+
+```
+miniprogram/
+├── app.js / app.json / app.wxss     # 登录态、状态栏高度、设计令牌与通用样式
+├── project.config.json  sitemap.json
+├── utils/    api.js（wx.request 封装 + 手动 Cookie 会话） config.js（服务器地址） format.js
+├── components/  change-chip / status-line / empty-state / trend-chart（canvas 2d）
+└── pages/    ledger（账本）/ watchlist（自选）/ mine（我的）/ lookthrough（穿透）
+              correlation（相关性）/ search / fund（详情）/ position（添加·修改持仓）
+```
+
+**与 Web 端的关键差异（有意为之）**
+
+| 项 | Web | 小程序 |
+|---|---|---|
+| 会话 | 浏览器自动带 HttpOnly Cookie | `wx.request` **不自动带** → 手动保存/回传 `Cookie` 头 |
+| 请求 | `fetch('/api/...')` 相对路径 | `wx.request(完整地址 + '/api/...')`，**必须配置服务器地址** |
+| 存储 | `localStorage` | `wx.setStorageSync` |
+| 图表 | SVG | **canvas 2d**（走势对比图） |
+| 下拉刷新 | 自研 PullToRefresh | 原生 `enablePullDownRefresh` |
+| 登录 | 弹层 AuthSheet | 「我的」页内联表单 |
+| 添加/修改持仓 | 两个页面 | 合并为 `pages/position?mode=add\|list` |
+| 后台管理 | `admin.html`（桌面端） | **不做**（小程序内访问桌面后台无意义） |
+
+数据口径完全一致：账本（账户资产 / 当日收益 / 持仓收益率）、自选行情、持仓穿透、相关性分析均直连同一批 `/api`。
+
+```bash
+pnpm test:miniprogram    # 小程序工程结构与语义校验：23 项断言
+```
+
+> 校验覆盖：页面四件套完整性、tabBar 注册、组件引用可解析、JS 语法、**接口契约与真实后端路由逐一对齐**、
+> WXML 标签闭合、**设计令牌与 Web 端一致**、未使用小程序不存在的 Web API。运行时验证需在微信开发者工具中完成。
+> 详见 **[docs/miniprogram.md](docs/miniprogram.md)**。
+
+---
+
 ## 💾 数据持久化（重启不丢）
 
 `server/db.cjs` 的三重落盘保障（v1.4 引入，合并后保持）：
@@ -452,8 +506,10 @@ pnpm db:checkpoint   # 手动合并 WAL
 | **剔除仿制 UI** | 去掉每页顶部的模拟 iOS 状态栏与「基金助手」标题栏（顶部改用 `safe-area-inset-top` 适配真机）、去掉详情页推广 banner |
 | **后续：三页顶部标题区也剔除** | 见上方「三页顶部标题区剔除」一行 |
 | 详情页真实化 | 用 `/api/detail` 的净值走势（近 240 交易日，SVG）替换演示分时图；新增「阶段收益 / 申购费率 / 起购金额」卡片；重仓股票改接 `/api/holdings`（真实季度、股票代码、持仓市值） |
-| 新增端到端测试 | `pnpm test:live`（64 项断言）：未登录不含静态数据、三页无顶部标题、注册→自选/持仓落库、下拉刷新与 60s 自动刷新（实测等待 62s 观察自动重取）、真实重仓股、详情页数值与接口逐项比对、我的页账号信息、**管理员后台入口与新标签页后台页**、重启后端仍在 |
+| 新增端到端测试 | `pnpm test:live`（145 项断言）：未登录不含静态数据、三页无顶部标题、注册→自选/持仓落库、下拉刷新与 60s 自动刷新（实测等待 62s 观察自动重取）、真实重仓股、详情页数值与接口逐项比对、我的页账号信息、**管理员后台入口与新标签页后台页**、重启后端仍在 |
 | **移除全部静态数据** | 删除 `src/data/mock.ts` 与无引用的 `IntradayChart.tsx`；未登录时账本/自选/我的/添加持仓只显示空态与登录引导（账户资产 0.00），搜索/详情接口失败时显示「—」与空态提示；`shoot.mjs` 改为通过真实接口播种演示账号后截图（12 页） |
+| **微信小程序版** | 新增 `miniprogram/`（原生 WXML/WXSS/JS，零构建、零依赖）：8 个页面（账本/自选/我的/穿透/相关性/搜索/详情/持仓维护）+ 4 个组件 + 3 个工具模块，与 Web 端共用同一后端；平台差异按小程序特性重写（`wx.request` + **手动维护 Cookie 会话**、`wx.setStorageSync`、**canvas 2d** 走势图、原生下拉刷新、内联登录表单）；新增 `pnpm test:miniprogram`（23 项：页面四件套/tabBar 注册/组件引用/JS 语法/**接口契约与真实后端路由对齐**/WXML 闭合/**设计令牌与 Web 一致**/禁用 Web API）；文档 `docs/miniprogram.md` |
+| **真实健康检查端点** | 新增 `api/health.js`（此前 `/api/health` 只存在于本地 dev-server，线上 404 → 部署自检与「服务器地址测试连接」会误报失败）；dev-server 改为复用同一实现，并修掉公开接口响应头被 shim 丢弃的问题（`ACAO`/`Cache-Control` 现在会真实返回） |
 | **新增「我的」页** | 底部 TabBar 扩展为 账本 / 自选 / **我的**；展示头像/用户名/角色 + 持仓合计与当日收益 + 我的自选/持仓明细 + 退出登录（不罗列接口字段与技术说明） |
 | **管理员后台页** | 新增独立多页入口 `admin.html`（`src/admin/`，桌面布局）：系统运营数据 10 项指标（账号/自选/账本/数据四组）+ 用户列表搜索 + 页内管理员登录 + 60s 自动刷新；「我的」页头像栏为管理员显示「后台管理」按钮并**新标签页**打开；**剔除**原「我的」页内的后台概览栏；`/api/admin/stats` 扩展 holdings/quotes/snapshot 等运营字段 |
 | **后台页自适应** | 手机 / 平板 / PC 三档适配：顶栏窄屏换行、指标卡 2→3→5 列、用户列表在手机切换为卡片式（PC 保持表格且容器可横向滚动）；`pnpm test:live` 在 393 / 768 / 1280 三种宽度下断言布局切换与**无横向溢出** |

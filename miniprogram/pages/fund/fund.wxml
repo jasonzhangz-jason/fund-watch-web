@@ -1,0 +1,77 @@
+<view class="page">
+  <!-- 头图 -->
+  <view class="hero">
+    <view class="row-between">
+      <view class="flex-1">
+        <view class="fs-34 bold hero-name">{{name || code}}</view>
+        <view class="fs-24 hero-code">{{code}}</view>
+      </view>
+      <view class="fav-btn {{fav ? 'on' : ''}}" bindtap="onToggleFav">{{fav ? '已自选' : '自选'}}</view>
+    </view>
+  </view>
+
+  <view wx:if="{{err}}" class="fs-26 t-up err">{{err}}</view>
+
+  <!-- 三指标 -->
+  <view class="page-pad card-wrap">
+    <view class="card metrics">
+      <view class="metric">
+        <text class="tnum bold fs-38 t-ink3">{{estimate}}</text>
+        <text class="fs-22 t-ink2">{{estimateLabel}}</text>
+      </view>
+      <view class="metric">
+        <text class="tnum bold fs-38 {{dayChangeUp ? 't-up' : 't-down'}}">{{dayChange}}</text>
+        <text class="fs-22 t-ink2">日涨幅{{navDate ? '(' + navDate + ')' : ''}}</text>
+      </view>
+      <view class="metric">
+        <text class="tnum bold fs-38 t-ink3">{{nav}}</text>
+        <text class="fs-22 t-ink2">净值{{navDate ? '(' + navDate + ')' : ''}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 净值走势 -->
+  <view wx:if="{{series.length}}" class="page-pad">
+    <view class="card card-pad">
+      <text class="fs-26 bold">{{trendTitle}}</text>
+      <trend-chart dates="{{dates}}" series="{{series}}"></trend-chart>
+    </view>
+  </view>
+
+  <!-- 阶段收益 -->
+  <view wx:if="{{metrics.length}}" class="page-pad">
+    <view class="card card-pad">
+      <text class="fs-26 bold">阶段收益</text>
+      <view class="phases">
+        <view wx:for="{{metrics}}" wx:key="label" class="phase">
+          <text class="tnum bold fs-28 {{item.up ? 't-up' : 't-down'}}">{{item.value}}</text>
+          <text class="fs-22 t-ink2">{{item.label}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 重仓股票 -->
+  <view class="page-pad">
+    <view class="card card-pad">
+      <view class="row-between">
+        <text class="fs-26 bold">重仓股票</text>
+        <text class="fs-22 t-ink3">{{quarter}}</text>
+      </view>
+      <view wx:if="{{!holdings.length}}" class="fs-24 t-ink3 empty-tip">暂无重仓股数据</view>
+      <view wx:for="{{holdings}}" wx:key="code" class="hold-row">
+        <view class="flex-1">
+          <view class="fs-26">{{item.name}}</view>
+          <view class="tnum fs-22 t-ink3">{{item.code}}</view>
+        </view>
+        <text class="tnum fs-26 bold w-140 {{item.changeUp ? 't-up' : 't-down'}}">{{item.change}}</text>
+        <text class="tnum fs-26 w-140 right">{{item.weight}}</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="page-pad">
+    <view class="btn-primary" bindtap="onAddPosition">添加到账本</view>
+  </view>
+  <view class="bottom-space"></view>
+</view>

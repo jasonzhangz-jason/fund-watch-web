@@ -1,0 +1,34 @@
+<view class="page">
+  <view class="search-bar">
+    <input
+      class="search-input"
+      value="{{kw}}"
+      bindinput="onInput"
+      focus
+      confirm-type="search"
+      placeholder="输入基金名称或代码"
+      placeholder-class="ph"
+    />
+  </view>
+
+  <view wx:if="{{msg}}" class="fs-24 t-up msg">{{msg}}</view>
+  <view wx:if="{{loading}}" class="fs-24 t-ink3 msg">搜索中…</view>
+
+  <view wx:if="{{!searched && !kw}}" class="fs-26 t-ink3 tip">输入关键词开始搜索（真实数据来自后端 /api/search）</view>
+  <view wx:if="{{searched && !results.length && !loading}}" class="fs-26 t-ink3 tip">没有匹配的基金</view>
+
+  <view class="list">
+    <block wx:for="{{results}}" wx:key="code">
+      <view class="list-row" data-code="{{item.code}}" bindtap="onOpenFund">
+        <view class="flex-1">
+          <view class="ellipsis fs-28 bold">{{item.name}}</view>
+          <view class="tnum fs-24 t-ink3 code">{{item.code}}{{item.fundType ? ' · ' + item.fundType : ''}}</view>
+        </view>
+        <view class="fav" data-code="{{item.code}}" data-name="{{item.name}}" catchtap="onAdd">
+          {{favorites.indexOf(item.code) >= 0 ? '已自选' : '＋自选'}}
+        </view>
+      </view>
+      <view class="list-sep"></view>
+    </block>
+  </view>
+</view>

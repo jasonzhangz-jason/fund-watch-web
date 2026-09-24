@@ -1,0 +1,125 @@
+<view class="page">
+  <view class="win-bar">
+    <text class="fs-24 t-ink3">分析窗口</text>
+    <view class="chip {{days === 30 ? 'on' : ''}}" data-days="30" bindtap="onWindow">近30日</view>
+    <view class="chip {{days === 60 ? 'on' : ''}}" data-days="60" bindtap="onWindow">近60日</view>
+    <view class="chip {{days === 120 ? 'on' : ''}}" data-days="120" bindtap="onWindow">近120日</view>
+  </view>
+
+  <view class="page-pad">
+    <view class="card card-pad">
+      <view class="row-between">
+        <view class="col">
+          <text class="fs-24 t-ink2">平均相关性</text>
+          <text class="tnum bold fs-50 {{avgUp ? 't-up' : 't-down'}} avg">{{avgText}}</text>
+        </view>
+        <view class="col right">
+          <text class="fs-22 t-ink3">{{fundCount}} 只基金 · {{pairCount}} 组对比</text>
+          <text class="fs-22 t-ink3 range">{{rangeText}}</text>
+          <text class="fs-22 t-ink3 range">{{pointText}}</text>
+        </view>
+      </view>
+      <view wx:if="{{interpretation}}" class="fs-24 t-ink2 interp">{{interpretation}}</view>
+      <view class="fs-22 t-ink3 note">
+        口径：对日收益率（净值环比涨跌）求皮尔逊相关系数，并只使用所有基金都有净值的共同交易日；
+        区间越接近 1 越同步，0 附近为不相关，负值表示反向波动。
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{err}}" class="fs-24 t-up err">{{err}}</view>
+  <view wx:if="{{!err && !pairCount && !loading}}" class="fs-26 t-ink3 empty-tip">{{reason || '账本至少需要 2 只基金，且需要有足够的共同交易日'}}</view>
+
+  <block wx:if="{{pairCount}}">
+    <view class="two-col">
+      <view class="card card-pad col-card">
+        <text class="fs-24 t-ink3">最相似</text>
+        <text class="tnum bold fs-38 t-up mv">{{mostSimilar.corrText}}</text>
+        <text class="fs-22 t-ink2 mv-name">{{mostSimilar.aName}} ↔ {{mostSimilar.bName}}</text>
+      </view>
+      <view class="card card-pad col-card">
+        <text class="fs-24 t-ink3">最分散</text>
+        <text class="tnum bold fs-38 t-down mv">{{mostDiverse.corrText}}</text>
+        <text class="fs-22 t-ink2 mv-name">{{mostDiverse.aName}} ↔ {{mostDiverse.bName}}</text>
+      </view>
+    </view>
+
+    <view class="page-pad">
+      <view class="card card-pad">
+        <view class="row-between">
+          <text class="fs-26 bold">走势对比（起点 = 100）</text>
+          <text class="fs-22 t-ink3">归一化后可直观比较</text>
+        </view>
+        <trend-chart dates="{{dates}}" series="{{series}}"></trend-chart>
+        <view class="legend">
+          <view wx:for="{{legend}}" wx:key="idx" class="legend-item">
+            <view class="legend-dot" style="background: {{item.color}}"></view>
+            <text class="fs-22 t-ink3">{{item.idx}}</text>
+            <text class="fs-22 t-ink2 ellipsis">{{item.name}}</text>
+          </view>
+        </view>
+        <view class="changes">
+          <view wx:for="{{changes}}" wx:key="idx" class="change-row">
+            <text class="tnum fs-22 t-ink3 idx">{{item.idx}}</text>
+            <text class="flex-1 ellipsis fs-24 t-ink2">{{item.name}}</text>
+            <text class="tnum fs-24 bold {{item.up ? 't-up' : 't-down'}}">{{item.text}}</text>
+          </view>
+        </view>
+        <view class="fs-22 t-ink3 note">
+          区间涨跌为分析窗口内的累计变化；曲线越贴合说明两只基金走势越同步（相关系数越高）。
+        </view>
+      </view>
+    </view>
+
+    <view class="page-pad">
+      <view class="card card-pad">
+        <text class="fs-26 bold">相关性矩阵</text>
+        <view class="matrix">
+          <view class="m-row m-head">
+            <view class="m-label"></view>
+            <view wx:for="{{colIndexes}}" wx:key="*this" class="m-cell m-col">{{item}}</view>
+          </view>
+          <view wx:for="{{matrixRows}}" wx:key="idx" class="m-row">
+            <view class="m-label">
+              <text class="tnum t-ink3">{{item.idx}}</text>
+              <text class="ellipsis">{{item.name}}</text>
+            </view>
+            <view wx:for="{{item.cells}}" wx:for-item="c" wx:key="v" class="m-cell" style="background: {{c.bg}}; color: {{c.fg}}">{{c.v}}</view>
+          </view>
+        </view>
+        <view class="legend-row">
+          <view class="legend-dot" style="background: rgba(232,48,60,0.5)"></view>
+          <text class="fs-22 t-ink3">正相关（同涨同跌）</text>
+          <view class="legend-dot gap-left" style="background: rgba(28,149,116,0.5)"></view>
+          <text class="fs-22 t-ink3">负相关（互相分散）</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="page-pad">
+      <view class="card card-pad">
+        <text class="fs-26 bold">两两组合（按相关性从高到低）</text>
+        <view wx:for="{{pairs}}" wx:key="aCode" class="pair">
+          <view class="flex-1">
+            <view class="ellipsis fs-24">{{item.aName}} ↔ {{item.bName}}</view>
+            <view class="pair-bar"><view class="pair-bar-in" style="width: {{item.barWidth}}%; background: {{item.color}}"></view></view>
+          </view>
+          <text class="tnum bold fs-26 pair-corr">{{item.corrText}}</text>
+          <text class="fs-22 t-ink3 pair-level">{{item.level}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view wx:if="{{insufficient.length}}" class="page-pad">
+      <view class="card card-pad">
+        <text class="fs-26 bold">未纳入分析（{{insufficient.length}} 只）</text>
+        <view class="fs-22 t-ink3 note">缺少足够净值历史或净值无波动的基金无法参与计算：</view>
+        <view class="tags">
+          <view wx:for="{{insufficient}}" wx:key="code" class="tag-item">{{item.name}}</view>
+        </view>
+      </view>
+    </view>
+  </block>
+
+  <view class="bottom-space"></view>
+</view>

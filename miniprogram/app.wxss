@@ -1,0 +1,94 @@
+/* 基金助手 · 设计令牌与通用样式（与 Web 端 src/index.css 同源） */
+page {
+  --primary: #1977ff;
+  --primary-soft: #9dc4fd;
+  --primary-tint: #e8f1ff;
+  --hero-from: #249ffd;
+  --hero-to: #1879fe;
+  --up: #e8303c;
+  --down: #1c9574;
+  --page-bg: #f5f6fa;
+  --field: #f9f9f9;
+  --ink: #1f1f1f;
+  --ink-2: #8a8f99;
+  --ink-3: #b0b6c0;
+  --line: #f0f1f5;
+
+  background: var(--page-bg);
+  color: var(--ink);
+  font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-size: 26rpx;
+}
+
+/* ---- 版式 ---- */
+.row { display: flex; align-items: center; }
+.row-between { display: flex; align-items: center; justify-content: space-between; }
+.col { display: flex; flex-direction: column; }
+.flex-1 { flex: 1; min-width: 0; }
+.tnum { font-variant-numeric: tabular-nums; }
+.bold { font-weight: 600; }
+.ellipsis { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.center { display: flex; align-items: center; justify-content: center; }
+
+/* ---- 颜色 ---- */
+.t-ink { color: var(--ink); }
+.t-ink2 { color: var(--ink-2); }
+.t-ink3 { color: var(--ink-3); }
+.t-up { color: var(--up); }
+.t-down { color: var(--down); }
+.t-primary { color: var(--primary); }
+
+/* ---- 卡片 ---- */
+.card {
+  background: #fff;
+  border-radius: 20rpx;
+  box-shadow: 0 2rpx 4rpx rgba(0, 0, 0, 0.04);
+}
+.card-pad { padding: 30rpx; }
+.page-pad { padding: 0 24rpx; }
+
+/* ---- 文本尺寸 ---- */
+.fs-22 { font-size: 22rpx; }
+.fs-24 { font-size: 24rpx; }
+.fs-26 { font-size: 26rpx; }
+.fs-28 { font-size: 28rpx; }
+.fs-30 { font-size: 30rpx; }
+.fs-38 { font-size: 38rpx; }
+.fs-50 { font-size: 50rpx; }
+
+/* ---- 列表行 ---- */
+.list-row {
+  display: flex;
+  align-items: center;
+  padding: 22rpx 30rpx;
+  background: #fff;
+}
+.list-sep { height: 1rpx; background: var(--line); margin-left: 30rpx; }
+
+/* ---- 主按钮 ---- */
+.btn-primary {
+  height: 92rpx;
+  border-radius: 46rpx;
+  background: var(--primary);
+  color: #fff;
+  font-size: 30rpx;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-primary.disabled { background: var(--primary-soft); }
+.btn-ghost {
+  height: 76rpx;
+  border-radius: 38rpx;
+  background: var(--field);
+  color: var(--ink-2);
+  font-size: 26rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---- 安全区（自绘导航的三个 tab 页使用） ---- */
+.safe-top { height: env(safe-area-inset-top, 0px); }
+.tabbar-space { height: 130rpx; }

@@ -189,11 +189,13 @@ const server = http.createServer(async (req, res) => {
   const m = url.match(/^\/api\/(\w+)$/);
   if (m) {
     if (m[1] === 'health') {
-      let db = null;
-      try { db = dbInfo(); } catch { /* 数据库尚未初始化 */ }
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, service: 'fund-watch-web', time: new Date().toISOString(), db }));
-      log(req.method, req.url, 200, Date.now() - t0);
+      // 与 Vercel 函数共用同一实现（api/health.js）
+      const health = require('../api/health.js');
+      const r = { _s: 200, _j: null, _h: {}, status(c) { this._s = c; return this; }, json(j) { this._j = j; }, setHeader(k, v) { this._h[k] = v; } };
+      await health({ method: req.method }, r);
+      res.writeHead(r._s, { 'Content-Type': 'application/json; charset=utf-8', ...r._h });
+      res.end(JSON.stringify(r._j));
+      log(req.method, req.url, r._s, Date.now() - t0);
       return;
     }
     const h = handlers[m[1]];
@@ -204,9 +206,17 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     try {
-      const r = { _s: 200, _j: null, status(c) { this._s = c; return this; }, json(j) { this._j = j; }, setHeader() {} };
+      // 忠实模拟 Vercel 函数的 res 契约：setHeader 必须真的转发（否则公开接口的响应头会被丢弃）
+      const r = {
+        _s: 200,
+        _j: null,
+        _h: {},
+        status(c) { this._s = c; return this; },
+        json(j) { this._j = j; },
+        setHeader(k, v) { this._h[k] = v; },
+      };
       await h({ query: parseQuery(req.url) }, r);
-      res.writeHead(r._s, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.writeHead(r._s, { 'Content-Type': 'application/json; charset=utf-8', ...r._h });
       res.end(JSON.stringify(r._j));
       log(req.method, req.url, r._s, Date.now() - t0);
     } catch (e) {

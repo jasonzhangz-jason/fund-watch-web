@@ -1,0 +1,42 @@
+{
+  "pages": [
+    "pages/ledger/ledger",
+    "pages/watchlist/watchlist",
+    "pages/mine/mine",
+    "pages/lookthrough/lookthrough",
+    "pages/correlation/correlation",
+    "pages/search/search",
+    "pages/fund/fund",
+    "pages/position/position"
+  ],
+  "window": {
+    "navigationBarBackgroundColor": "#ffffff",
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "基金助手",
+    "backgroundColor": "#f5f6fa",
+    "backgroundTextStyle": "dark"
+  },
+  "tabBar": {
+    "color": "#8a8f99",
+    "selectedColor": "#1977ff",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/ledger/ledger",
+        "text": "账本"
+      },
+      {
+        "pagePath": "pages/watchlist/watchlist",
+        "text": "自选"
+      },
+      {
+        "pagePath": "pages/mine/mine",
+        "text": "我的"
+      }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

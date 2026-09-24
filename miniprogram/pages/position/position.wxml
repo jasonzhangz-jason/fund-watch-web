@@ -1,0 +1,80 @@
+<view class="page">
+  <!-- 添加持仓 -->
+  <block wx:if="{{mode === 'add'}}">
+    <view class="page-pad top-pad">
+      <view class="card card-pad">
+        <view class="fs-26 t-ink2">基金</view>
+        <view class="picker" bindtap="togglePicker">
+          <text class="{{picked ? '' : 't-ink3'}}">{{picked ? picked.name + ' · ' + picked.code : '请选择基金'}}</text>
+          <text class="t-ink3">{{showPicker ? '⌃' : '⌄'}}</text>
+        </view>
+
+        <block wx:if="{{showPicker}}">
+          <input class="search-input" value="{{kw}}" bindinput="onInput" placeholder="搜索基金名称或代码" placeholder-class="ph" />
+          <view class="results">
+            <block wx:for="{{results}}" wx:key="code">
+              <view class="result-row" data-code="{{item.code}}" data-name="{{item.name}}" bindtap="onPick">
+                <view class="flex-1">
+                  <view class="ellipsis fs-26">{{item.name}}</view>
+                  <view class="tnum fs-22 t-ink3">{{item.code}}</view>
+                </view>
+              </view>
+            </block>
+          </view>
+        </block>
+      </view>
+    </view>
+
+    <view class="page-pad">
+      <view class="card card-pad">
+        <view class="field">
+          <text class="label">持有金额</text>
+          <input class="input tnum" type="digit" value="{{amount}}" bindinput="onAmount" placeholder="0.00" placeholder-class="ph" />
+        </view>
+        <view class="field">
+          <text class="label">持有收益</text>
+          <input class="input tnum" type="digit" value="{{profit}}" bindinput="onProfit" placeholder="可填负数，如 -120.5" placeholder-class="ph" />
+        </view>
+        <view class="fs-22 t-ink3 note">持有收益率 = 持有收益 / 本金（本金 = 持有金额 − 持有收益），由服务端统一计算。</view>
+      </view>
+    </view>
+
+    <view wx:if="{{err}}" class="fs-24 t-up err">{{err}}</view>
+    <view class="page-pad">
+      <view class="btn-primary {{saving ? 'disabled' : ''}}" bindtap="save">{{saving ? '保存中…' : '保存到账本'}}</view>
+    </view>
+  </block>
+
+  <!-- 修改持仓 -->
+  <block wx:else>
+    <view wx:if="{{!list.length}}" class="fs-26 t-ink3 empty-tip">暂无持仓</view>
+    <view class="list">
+      <block wx:for="{{list}}" wx:key="code">
+        <view class="pos-row">
+          <view class="flex-1" data-code="{{item.code}}" bindtap="onToggleEdit">
+            <view class="ellipsis fs-28 bold">{{item.name}}</view>
+            <view class="tnum fs-24 t-ink2 sub">¥{{item.amount}} · 收益 {{item.profit}}</view>
+          </view>
+          <view class="act" data-code="{{item.code}}" catchtap="top">置顶</view>
+          <view class="act danger" data-code="{{item.code}}" data-name="{{item.name}}" catchtap="remove">删除</view>
+        </view>
+
+        <view wx:if="{{editing === item.code}}" class="edit-box">
+          <view class="field">
+            <text class="label">持有金额</text>
+            <input class="input tnum" type="digit" value="{{editAmount}}" bindinput="onEditAmount" />
+          </view>
+          <view class="field">
+            <text class="label">持有收益</text>
+            <input class="input tnum" type="digit" value="{{editProfit}}" bindinput="onEditProfit" />
+          </view>
+          <view class="btn-primary small" data-code="{{item.code}}" catchtap="saveEdit">保存</view>
+        </view>
+
+        <view class="list-sep"></view>
+      </block>
+    </view>
+  </block>
+
+  <view class="bottom-space"></view>
+</view>

@@ -1,0 +1,66 @@
+<view class="page">
+  <view class="safe-top" style="height: {{statusBarHeight}}px"></view>
+
+  <view wx:if="{{!user}}" class="page-pad tip-wrap">
+    <view class="card tip" bindtap="onLogin">
+      <text class="fs-26 t-ink">登录后自选会保存到账号</text>
+      <text class="fs-24 t-ink2">换设备也能看到，行情自动刷新</text>
+      <text class="fs-26 t-primary bold">立即登录 ›</text>
+    </view>
+  </view>
+
+  <view class="head-row">
+    <view class="row">
+      <text class="fs-24 t-ink3">共 {{list.length}} 只</text>
+    </view>
+    <view class="row sort-group">
+      <view class="sort-cell {{sortKey === 'latestChange' ? 'on' : ''}}" data-key="latestChange" bindtap="onSort">
+        <text>最新涨幅</text>
+      </view>
+      <view class="sort-cell {{sortKey === 'estChange' ? 'on' : ''}}" data-key="estChange" bindtap="onSort">
+        <text>估算涨幅</text>
+      </view>
+    </view>
+  </view>
+
+  <status-line left="{{list.length ? '真实行情' : ''}}" right="{{sourceText}}"></status-line>
+
+  <view wx:if="{{err}}" class="err fs-24">{{err}}</view>
+
+  <block wx:if="{{empty}}">
+    <empty-state
+      wx:if="{{!user}}"
+      title="登录后可添加自选"
+      desc="自选属于账号数据，登录后写入 SQLite，与网页端同源"
+      actionText="去登录 / 注册"
+      bind:action="onLogin"
+    ></empty-state>
+    <empty-state
+      wx:else
+      title="暂无自选基金"
+      desc="搜索基金并点击「＋自选」即可加入"
+      actionText="去搜索"
+      bind:action="onAdd"
+    ></empty-state>
+  </block>
+
+  <view wx:else class="list">
+    <block wx:for="{{list}}" wx:key="code">
+      <view class="list-row" data-code="{{item.code}}" data-name="{{item.name}}" bindtap="onOpenFund" bindlongpress="onLongPress">
+        <view class="flex-1">
+          <view class="ellipsis fs-28 bold">{{item.name}}</view>
+          <view class="fs-24 t-ink3 code">{{item.code}}{{item.navDate ? ' · 净值日 ' + item.navDate : ''}}</view>
+        </view>
+        <text class="tnum fs-28 bold w-140 {{item.latest === null ? 't-ink3' : (item.latest >= 0 ? 't-up' : 't-down')}}">
+          {{item.latest === null ? '—' : (item.latest >= 0 ? '+' : '') + item.latest.toFixed(2) + '%'}}
+        </text>
+        <view class="chip-wrap">
+          <change-chip value="{{item.estimate}}" muted="{{!item.estAvailable}}"></change-chip>
+        </view>
+      </view>
+      <view class="list-sep"></view>
+    </block>
+  </view>
+
+  <view class="tabbar-space"></view>
+</view>

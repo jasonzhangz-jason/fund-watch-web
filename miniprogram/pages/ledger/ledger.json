@@ -1,0 +1,10 @@
+{
+  "navigationStyle": "custom",
+  "enablePullDownRefresh": true,
+  "backgroundTextStyle": "dark",
+  "usingComponents": {
+    "change-chip": "/components/change-chip/change-chip",
+    "status-line": "/components/status-line/status-line",
+    "empty-state": "/components/empty-state/empty-state"
+  }
+}

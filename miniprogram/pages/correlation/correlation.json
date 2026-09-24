@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "基金相关性分析",
+  "usingComponents": {
+    "trend-chart": "/components/trend-chart/trend-chart"
+  }
+}
