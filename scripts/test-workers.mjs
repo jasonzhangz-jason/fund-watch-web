@@ -135,6 +135,30 @@ try {
   check('内置管理员可用 root/root 登录', rootLogin.status === 200 && rootLogin.json.user.role === 'admin', JSON.stringify(rootLogin.json));
   check('会话 Cookie 为 HttpOnly', /HttpOnly/.test(rootLogin.setCookie || ''), rootLogin.setCookie);
   check('HTTPS 下 Cookie 带 Secure', /Secure/.test(rootLogin.setCookie || ''), rootLogin.setCookie);
+  check('默认 SameSite=Lax（同域部署）', /SameSite=Lax/.test(rootLogin.setCookie || ''), rootLogin.setCookie);
+
+  // 分域部署开关：COOKIE_SAMESITE=None 时必须是 None + Secure
+  env.COOKIE_SAMESITE = 'None';
+  const crossSite = await call('POST', '/api/auth/login', { username: 'root', password: 'root' });
+  check('COOKIE_SAMESITE=None 生效', /SameSite=None/.test(crossSite.setCookie || ''), crossSite.setCookie);
+  check('SameSite=None 同时带 Secure', /SameSite=None.*Secure/.test(crossSite.setCookie || ''), crossSite.setCookie);
+  // http 下 None 会被浏览器丢弃 → 自动回落 Lax
+  const httpReq = await worker.fetch(
+    new Request('http://localhost/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'root', password: 'root' }),
+    }),
+    env,
+    {},
+  );
+  check(
+    'http 下 SameSite=None 自动回落 Lax（避免被浏览器丢弃）',
+    /SameSite=Lax/.test(httpReq.headers.get('Set-Cookie') || ''),
+    httpReq.headers.get('Set-Cookie'),
+  );
+  delete env.COOKIE_SAMESITE;
+
   const rootRow = sqlite.prepare("SELECT * FROM users WHERE username='root'").get();
   check('密码哈希为 pbkdf2 格式', String(rootRow.password_hash).startsWith('pbkdf2$sha256$'), String(rootRow.password_hash).slice(0, 30));
 

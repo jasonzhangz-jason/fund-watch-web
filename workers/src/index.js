@@ -28,6 +28,7 @@ import {
   parseCookies,
   sessionCookie,
   clearCookie,
+  sameSiteOf,
 } from './auth.js';
 import { getQuotes, estimateOf, navListOf, getHoldings } from './upstream.js';
 import { buildPortfolio, getHistory, getPositionDaily, getSnapshot, buildLookthrough, buildCorrelation } from './portfolio.js';
@@ -135,6 +136,7 @@ async function ensureAdminSeed(env) {
 async function authRoute(request, env, action, body, cookies) {
   const iterations = iterationsOf(env);
   const secure = new URL(request.url).protocol === 'https:';
+  const sameSite = sameSiteOf(env, secure);
 
   if (action === 'register' && request.method === 'POST') {
     const { username, password } = body || {};
@@ -156,7 +158,7 @@ async function authRoute(request, env, action, body, cookies) {
     const token = await createSession(env, ins.lastRowId);
     return ok(
       { user: { id: ins.lastRowId, username, role: 'user', created_at: now } },
-      { 'Set-Cookie': sessionCookie(token, secure) },
+      { 'Set-Cookie': sessionCookie(token, secure, undefined, sameSite) },
     );
   }
 
@@ -167,12 +169,12 @@ async function authRoute(request, env, action, body, cookies) {
     const passOk = user ? await verifyPassword(password, user.salt, user.password_hash, iterations) : false;
     if (!user || !passOk) return err(401, '用户名或密码不正确');
     const token = await createSession(env, user.id);
-    return ok({ user: publicUser(user) }, { 'Set-Cookie': sessionCookie(token, secure) });
+    return ok({ user: publicUser(user) }, { 'Set-Cookie': sessionCookie(token, secure, undefined, sameSite) });
   }
 
   if (action === 'logout' && request.method === 'POST') {
     await destroySession(env, cookies[SESSION_COOKIE]);
-    return ok({ user: null }, { 'Set-Cookie': clearCookie(secure) });
+    return ok({ user: null }, { 'Set-Cookie': clearCookie(secure, sameSite) });
   }
 
   if (action === 'me' && request.method === 'GET') {

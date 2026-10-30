@@ -27,6 +27,8 @@
     "test:live": "node scripts/test-live-ui.cjs",
     "test:workers": "node scripts/test-workers.mjs",
     "d1:export": "node --disable-warning=ExperimentalWarning scripts/d1-export.mjs",
+    "cf:check": "node scripts/cf-preflight.mjs",
+    "cf:doctor": "node scripts/cf-doctor.mjs",
     "cf:dev": "wrangler dev --config workers/wrangler.toml",
     "cf:deploy": "wrangler deploy --config workers/wrangler.toml",
     "cf:db:create": "wrangler d1 create fund-watch",

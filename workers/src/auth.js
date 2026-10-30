@@ -110,12 +110,25 @@ export function parseCookies(header) {
   return out;
 }
 
-export function sessionCookie(token, secure, maxAgeSec = SESSION_DAYS * 86400) {
-  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSec}${secure ? '; Secure' : ''}`;
+export function sessionCookie(token, secure, maxAgeSec = SESSION_DAYS * 86400, sameSite = 'Lax') {
+  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=${maxAgeSec}${secure ? '; Secure' : ''}`;
 }
 
-export function clearCookie(secure) {
-  return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure ? '; Secure' : ''}`;
+export function clearCookie(secure, sameSite = 'Lax') {
+  return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=0${secure ? '; Secure' : ''}`;
+}
+
+/**
+ * 从 env 读取 Cookie 的 SameSite：
+ *   - 同域部署（推荐）：Lax
+ *   - 前后端**不同站点**（如 *.pages.dev + *.workers.dev，或两个不同主域）：必须 None + Secure，
+ *     否则浏览器不会在跨站请求里带上会话 Cookie（表现为「登录成功但刷新就掉登录态」）
+ */
+export function sameSiteOf(env, secure) {
+  const raw = String((env && env.COOKIE_SAMESITE) || '').trim();
+  const value = /^(Lax|Strict|None)$/i.test(raw) ? raw.replace(/^./, (c) => c.toUpperCase()) : 'Lax';
+  // SameSite=None 必须同时 Secure，否则浏览器直接丢弃该 Cookie
+  return value === 'None' && secure ? 'None' : value === 'None' ? 'Lax' : value;
 }
 
 export { SESSION_COOKIE, SESSION_DAYS };

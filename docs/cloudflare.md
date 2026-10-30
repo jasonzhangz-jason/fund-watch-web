@@ -227,3 +227,33 @@ curl -i -X OPTIONS https://<worker>/api/auth/login -H "Origin: https://<pages>" 
 pnpm test:workers     # Worker 端 80 项断言（D1 模拟，无 R2）
 pnpm test:live        # 前端 E2E（跑在 Node 后端上，验证前端契约未变）
 ```
+---
+
+## 十一、部署后 404 排查
+
+一条命令定位（换成你的真实地址；只给一个也行）：
+
+```bash
+node scripts/cf-doctor.mjs --site=https://你的站点域名 --worker=https://fund-watch-api.<子域>.workers.dev
+```
+
+脚本按「Worker → Pages → 站点到 Worker 的路由 → 登录 Cookie」四层分别断言，并给出下一步。常见结论对照：
+
+| 现象 | 原因 | 修法 |
+|---|---|---|
+| 站点首页就是 Cloudflare 的 404 页 | Pages 只有**预览部署**，生产环境为空（部署时未指定生产分支） | `wrangler pages deploy dist --project-name fund-watch --branch main`；或在 Dashboard → Deployments 把该次部署设为 Production |
+| 站点能打开，但接口 404（页面提示「未连接后端」） | `/api/*` 没有路由到 Worker，也没配 `VITE_API_BASE` | ① Worker → Settings → Triggers → Add route：`<你的域名>/api/*`（推荐，需自定义域）；② 或给 Pages 构建加 `VITE_API_BASE=<worker 地址>` 后重新部署 |
+| 打开 `*.workers.dev/` 得到 JSON 404 | **正常**：Worker 只服务 `/api/*`，根路径没有页面 | 访问 `/api/health` 验证；页面由 Pages 提供 |
+| `/api/health` 也是 404 | Worker 没部署成功，或地址指向了别的 Worker | 重跑 `wrangler deploy` 看输出；`wrangler tail` 看实时日志 |
+| 登录成功但刷新就掉登录态 | 前端与后端是**不同站点**（如 `*.pages.dev` + `*.workers.dev`），`SameSite=Lax` 的 Cookie 不被跨站发送 | 见下节 |
+
+### 分域部署的 SameSite 开关
+
+`workers/wrangler.toml` 的 `[vars]`：
+
+```toml
+COOKIE_SAMESITE = "None"   # 仅当前后端不同站点时；同域保持 Lax
+```
+
+- `None` 必须配合 `Secure`（本项目在 https 下自动加）；http 下会自动回落 `Lax`，避免 Cookie 被浏览器直接丢弃。
+- 更稳妥的做法仍是**同域**：`fund.example.com`（Pages）+ 该域的 `/api/*`（Worker Route）。
