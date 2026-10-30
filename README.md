@@ -91,6 +91,9 @@ fund-watch-web/
 │   └── test-*.mjs  smoke-*.cjs  qr-*.mjs
 ├── legacy/index.html           # 归档版单页 UI（v1，84KB，仍由 8787 提供服务）
 ├── docs/backend-v1.md          # v1 后端完整文档（归档）
+├── docs/cloudflare.md          # Cloudflare 部署指南（Pages/Workers/D1 + 数据迁移）
+├── workers/                    # Cloudflare Worker 后端（src/ + migrations/ + wrangler.toml）
+├── shared/metrics.cjs          # Node 与 Worker 共用的运营指标定义
 ├── data/fundwatch.db           # 本地 SQLite（自动创建，已忽略）
 └── shots/                      # 自检截图（pnpm shoot 生成，已忽略）
 ```
@@ -178,6 +181,7 @@ fund-watch-web/
 # 后端（全部本地可跑，自带临时数据库，不污染 data/）
 pnpm test:docs          # 文档一致性：README 的 ER 图/字段说明 vs 真实建表语句：43 项断言
 pnpm test:correlation   # 基金相关性分析：结构 + **独立复算皮尔逊系数逐值比对 + 走势序列校验** + 窗口/缓存：39 项断言
+pnpm test:workers       # Cloudflare Worker 后端：用 node:sqlite 模拟 D1 真跑（路由/会话/级联删除/PBKDF2/数据导出）：80 项断言
 pnpm test:auth          # 账号/自选/会话：20 项断言
 pnpm test:admin         # 后台权限/用户管理/运营统计 + 级联删除验证（会话/自选/持仓/快照）+ 10 项指标明细一致性：60 项断言
 pnpm test:portfolio     # 账本服务：账户资产/当日收益算术、每日快照落库、行情缓存、重启仍在：28 项断言
@@ -410,6 +414,56 @@ erDiagram
 - 「当日」以持仓的**最新净值日期**为准（非本地时钟），保证跨周末/节假日口径稳定
 
 前端使用：**账本页**与**我的页**登录后直接读取 `/api/portfolio`（服务端口径 + 落库）；**未登录不展示任何数据**（空态 + 登录引导），接口不可用时显示「—」与提示，不做任何本地推算或硬编码兜底。
+
+---
+
+## ☁️ Cloudflare 部署（Pages + Workers + D1）
+
+一套代码两种部署目标（Node/Vercel 与 Cloudflare 并存），前端契约完全一致；**不使用对象存储（无 R2）**。
+
+| 位置 | 产品 | 落地物 |
+|---|---|---|
+| 前端 | **Cloudflare Pages** | `dist/`（含 `admin.html` 后台页、`_headers` 缓存与安全头） |
+| 后端 | **Cloudflare Workers** | `workers/`（统一路由，替代 22 个 Vercel 函数） |
+| 数据库 | **Cloudflare D1** | `workers/migrations/0001_init.sql`（7 张表，与本地 SQLite 同结构） |
+| 数据备份 | **即时下载** | `GET /api/admin/backup`：现算全库 NDJSON → gzip → 浏览器下载（不落任何存储） |
+
+```bash
+# 1) 创建 D1，把 database_id 填进 workers/wrangler.toml
+wrangler d1 create fund-watch
+
+# 2) 建表（--local 本地 / --remote 线上）
+pnpm cf:db:migrate:local
+pnpm cf:db:migrate
+
+# 3) 部署后端 → https://fund-watch-api.<子域>.workers.dev
+pnpm cf:deploy
+
+# 4) 部署前端（分域时注入后端地址）
+VITE_API_BASE=https://fund-watch-api.<子域>.workers.dev pnpm build
+pnpm cf:pages
+
+# 5) 本地开发（Worker + 本地 D1 模拟）
+pnpm cf:dev
+```
+
+**关键差异**（详见 [docs/cloudflare.md](docs/cloudflare.md)）
+
+| 能力 | Node / Vercel | Cloudflare |
+|---|---|---|
+| 数据库 | `node:sqlite`（同步） | **D1（异步）**，SQL 方言一致 |
+| 密码哈希 | scrypt（并兼容校验 PBKDF2） | **PBKDF2-SHA256（WebCrypto）** → 两端互认；旧 scrypt 账号需重置密码 |
+| 会话 | HttpOnly Cookie + `sessions` 表 | 同（跨域时 Worker 回显 Origin + 允许凭据） |
+| 备份 | `VACUUM INTO` 本地文件 | **导出下载**：`GET /api/admin/backup` → NDJSON.gz（无存储，自行归档） |
+| 迁移已有数据 | — | `pnpm d1:export` → `wrangler d1 execute --file` |
+
+> **域名拓扑很重要**：推荐「同域」——Pages 绑自定义域，Worker 用 Route 接管 `/<域>/api/*`，
+> 前端零改动且无跨域 Cookie 问题；分域部署需配置 `VITE_API_BASE` 与 `CORS_ORIGINS`，
+> 且跨站 Cookie 需 `SameSite=None; Secure`（文档给了取舍说明）。
+
+```bash
+pnpm test:workers    # Worker 端 80 项断言（本机用 node:sqlite 模拟 D1 真跑，无 R2）
+```
 
 ---
 

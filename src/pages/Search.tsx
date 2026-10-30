@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { PhoneFrame } from '../components/chrome';
 import { useStore } from '../state/store';
 import { useAuth } from '../state/auth';
+import { api } from '../lib/api';
 
 type Item = { code: string; name: string };
 
@@ -31,13 +32,12 @@ export default function Search() {
     setLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/search?key=${encodeURIComponent(kw)}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = (await res.json()) as { items?: Item[] };
+        // 统一走接口客户端：分域部署（Pages + Workers）时可指向远端后端
+        const data = await api.search(kw);
         const items = Array.isArray(data.items) ? data.items.map((i) => ({ code: i.code, name: i.name })) : [];
-        if (alive) setRemote(items.length ? items : null); // 空结果也回落本地，避免空白页
+        if (alive) setRemote(items.length ? items : null); // 空结果也回落空态，避免空白页
       } catch {
-        if (alive) setRemote(null); // 后端不可用 → 回落本地数据
+        if (alive) setRemote(null); // 后端不可用 → 空态提示
       } finally {
         if (alive) setLoading(false);
       }

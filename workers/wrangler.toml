@@ -1,0 +1,31 @@
+# Cloudflare Workers（后端 API）
+#   部署：npx wrangler deploy
+#   本地：npx wrangler dev --local（自动使用本地 D1 模拟）
+name = "fund-watch-api"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# 非敏感配置；敏感值用 `npx wrangler secret put XXX` 注入
+[vars]
+ADMIN_USERNAME = "root"
+# 可选：跨域白名单（逗号分隔）。留空表示回显任意 Origin（配合 credentials 使用）
+CORS_ORIGINS = ""
+# PBKDF2 迭代次数（登录/注册的 CPU 成本；免费计划 CPU 上限 10ms，建议 5w-10w）
+PBKDF2_ITERATIONS = "100000"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "fund-watch"
+# 执行 `npx wrangler d1 create fund-watch` 后把返回的 database_id 填到这里
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+# 说明：本项目不使用对象存储（无 R2 绑定）。
+# 数据备份走「管理端 → 导出数据」：Worker 现算全库 NDJSON → gzip → 浏览器直接下载。
+
+[observability]
+enabled = true
+
+[placement]
+mode = "smart"

@@ -9,14 +9,41 @@ const SESSION_DAYS = 30;
 const SCRYPT_KEYLEN = 64;
 
 // ---------------- 密码 ----------------
-function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
+/**
+ * 密码哈希有两种格式（两套运行时共用同一个库）：
+ *   - 新版：`pbkdf2$sha256$<iterations>$<hex>`（Cloudflare Workers / WebCrypto 生成，Node 也能生成与校验）
+ *   - 旧版：裸 hex（scrypt，Node 专用；Workers 无法校验，需重置密码）
+ */
+const PBKDF2_PREFIX = /^pbkdf2\$sha256\$(\d+)\$([0-9a-f]+)$/i;
+
+function pbkdf2Hash(password, salt, iterations) {
+  return crypto.pbkdf2Sync(String(password), String(salt), iterations, 32, 'sha256').toString('hex');
+}
+
+function hashPassword(password, salt = crypto.randomBytes(16).toString('hex'), iterations = 100000) {
+  // 默认沿用 scrypt（Node 端性能更好）；如需与 Workers 互认可传 { pbkdf2: true }
   const hash = crypto.scryptSync(password, salt, SCRYPT_KEYLEN).toString('hex');
   return { hash, salt };
 }
 
+/** PBKDF2 格式哈希（与 workers/src/auth.js 完全一致） */
+function hashPasswordPbkdf2(password, salt = crypto.randomBytes(16).toString('hex'), iterations = 100000) {
+  const hex = pbkdf2Hash(password, salt, iterations);
+  return { hash: `pbkdf2$sha256$${iterations}$${hex}`, salt };
+}
+
 function verifyPassword(password, salt, expectedHash) {
+  const stored = String(expectedHash || '');
+  const m = stored.match(PBKDF2_PREFIX);
+  if (m) {
+    const iterations = Number(m[1]);
+    const actual = Buffer.from(pbkdf2Hash(password, salt, iterations), 'hex');
+    const expected = Buffer.from(m[2], 'hex');
+    return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
+  }
+  // 旧版 scrypt
   const actual = crypto.scryptSync(password, salt, SCRYPT_KEYLEN);
-  const expected = Buffer.from(expectedHash, 'hex');
+  const expected = Buffer.from(stored, 'hex');
   return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
 }
 
@@ -155,7 +182,7 @@ function clearCookie() {
 
 module.exports = {
   SESSION_COOKIE, SESSION_DAYS, ADMIN_USERNAME,
-  hashPassword, verifyPassword,
+  hashPassword, hashPasswordPbkdf2, verifyPassword,
   validateCredentials, validateFundCode,
   createUser, findUserByName, findUserById, publicUser, isAdmin,
   ensureAdminSeed, changePassword,

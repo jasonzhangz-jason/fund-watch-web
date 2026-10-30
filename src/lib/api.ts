@@ -1,7 +1,40 @@
 /**
  * 后端接口客户端
- * 所有请求都走相对路径 /api/*：开发期由 Vite 代理到 8787，生产由 Vercel 同源提供。
+ * 默认走相对路径 /api/*（开发期由 Vite 代理到 8787；同域部署时由该域的 Worker/Vercel 提供）。
+ *
+ * 前后端**分域部署**（例如前端 Cloudflare Pages、后端 Cloudflare Workers）时必须指定后端地址：
+ *   1) 构建期：VITE_API_BASE=https://api.example.com pnpm build（Pages 的构建设置里加环境变量）
+ *   2) 运行期：localStorage.fundwatch_api_base（优先级更高，便于灰度切换/排障）
  */
+export const API_BASE_KEY = 'fundwatch_api_base';
+
+/** 构建期注入的后端地址 */
+const BUILD_API_BASE = String(import.meta.env?.VITE_API_BASE || '').replace(/\/+$/, '');
+
+/** 当前生效的后端地址（运行期设置 > 构建期配置 > 同源相对路径） */
+export function apiBase(): string {
+  try {
+    const saved = localStorage.getItem(API_BASE_KEY);
+    if (saved !== null) return String(saved).trim().replace(/\/+$/, '');
+  } catch {
+    /* 隐私模式下不可用 */
+  }
+  return BUILD_API_BASE;
+}
+
+/** 设置运行期后端地址（空字符串 = 回到同源） */
+export function setApiBase(base: string) {
+  const clean = String(base || '').trim().replace(/\/+$/, '');
+  try {
+    if (clean) localStorage.setItem(API_BASE_KEY, clean);
+    else localStorage.removeItem(API_BASE_KEY);
+  } catch {
+    /* 忽略 */
+  }
+}
+
+/** 需要登录态（HttpOnly Cookie）的接口前缀：跨域时必须携带凭据 */
+const CREDENTIAL_PATHS = ['/api/auth', '/api/watchlist', '/api/positions', '/api/portfolio', '/api/admin'];
 
 export class ApiError extends Error {
   status: number;
@@ -13,9 +46,15 @@ export class ApiError extends Error {
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const base = apiBase();
+  // 分域部署时：账号接口带 Cookie（Worker 已回显 Origin + Allow-Credentials）；
+  // 公开接口用 omit —— 它们返回 Access-Control-Allow-Origin: *，而「通配符 + 凭据」会被浏览器判为非法。
+  const needCreds = CREDENTIAL_PATHS.some((p) => url.startsWith(p));
+  const credentials: RequestCredentials = !base ? 'same-origin' : needCreds ? 'include' : 'omit';
+
   let res: Response;
   try {
-    res = await fetch(url, { credentials: 'same-origin', ...init });
+    res = await fetch(`${base}${url}`, { credentials, ...init });
   } catch (e) {
     // 网络层失败（后端未启动 / 断网）
     throw new ApiError((e as Error).message || '网络请求失败', 0);

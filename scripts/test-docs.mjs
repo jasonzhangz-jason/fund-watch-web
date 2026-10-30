@@ -13,8 +13,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
-const dbSrc = fs.readFileSync(path.join(ROOT, 'server', 'db.cjs'), 'utf8');
+/** 统一行尾：Windows 检出的 README 是 CRLF，解析必须与行尾无关（Linux/macOS 检出也能通过） */
+const normalize = (s) => s.replace(/\r\n/g, '\n');
+const readme = normalize(fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8'));
+const dbSrc = normalize(fs.readFileSync(path.join(ROOT, 'server', 'db.cjs'), 'utf8'));
 
 let pass = 0;
 let fail = 0;
