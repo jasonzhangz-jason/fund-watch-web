@@ -31,7 +31,13 @@ pnpm dev:api                  # 仅后端 → http://127.0.0.1:8787
 pnpm build                    # → 仓库根 dist/（Vite root=web，产物仍在根目录）
 pnpm preview                  # 本地预览构建产物
 pnpm deploy                   # vercel deploy --prod（需已安装 vercel CLI；见「说明与注意」第 6 条）
+
+# 查看全部命令及其作用（按 本地启动 / 构建 / 数据库 / Cloudflare 部署 / 测试 分组）
+pnpm commands                 # 支持 pnpm commands cf 只看某前缀
 ```
+
+> **每条命令都有说明**：写在 `package.json` 的 `scriptsInfo` 里（JSON 不支持注释，故用平行字段），
+> `pnpm commands` 负责打印，`pnpm test:docs` 负责校验「命令 ↔ 说明」是否一一对应（漏写会直接失败）。
 
 **工程分三块**（详见下方「目录结构」）：`web/` 前端、`backend/` 后端、`scripts/` 脚本
 （`dev/` 本地启动、`deploy/` Cloudflare 部署、`tests/` 测试）。根目录只放配置（`vite.config.mts`
@@ -202,7 +208,7 @@ fund-watch-web/
 
 ```bash
 # 后端（全部本地可跑，自带临时数据库，不污染 data/）
-pnpm test:docs          # 文档一致性：README 的 ER 图/字段说明 vs 真实建表语句：43 项断言
+pnpm test:docs          # 文档一致性：README 的 ER 图/字段说明 vs 真实建表语句 + 命令说明覆盖度：45 项断言
 pnpm test:correlation   # 基金相关性分析：结构 + **独立复算皮尔逊系数逐值比对 + 走势序列校验** + 窗口/缓存：39 项断言
 pnpm test:workers       # Cloudflare Worker 后端：用 node:sqlite 模拟 D1 真跑（路由/会话/级联删除/PBKDF2/数据导出/跨站 Cookie）：84 项断言
 pnpm test:auth          # 账号/自选/会话：20 项断言

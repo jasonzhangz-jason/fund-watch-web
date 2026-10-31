@@ -136,5 +136,19 @@ for (const [a, card, b] of rels) {
   else check(`${a} → ${b} 为逻辑关联（无外键）`, !fkTargets.has(a), `${a} 其实有外键，应改为实线`);
 }
 
+/* ---------- 6. 命令说明覆盖度（package.json scripts ↔ scriptsInfo） ---------- */
+console.log('\n【5】命令说明覆盖度');
+const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+const commands = Object.keys(pkg.scripts || {});
+const infos = pkg.scriptsInfo || {};
+const noDesc = commands.filter((c) => !infos[c] || !String(infos[c]).trim());
+check(
+  `全部 ${commands.length} 条命令都有作用说明`,
+  noDesc.length === 0,
+  noDesc.length ? `缺少: ${noDesc.join(', ')}` : '',
+);
+const orphan = Object.keys(infos).filter((c) => !commands.includes(c));
+check('没有多余的说明（scriptsInfo ⊆ scripts）', orphan.length === 0, orphan.length ? `多余: ${orphan.join(', ')}` : '');
+
 console.log(`\n结果：通过 ${pass} / 失败 ${fail}`);
 process.exit(fail === 0 ? 0 : 1);
