@@ -1,0 +1,11 @@
+{
+  "$comment": "Cloudflare 部署配置（不含任何密钥）。scripts/cf-preflight.mjs（pnpm cf:check）与 scripts/cf-doctor.mjs 都读取本文件。",
+  "workerName": "fund-watch-api",
+  "workerUrl": "https://fund-watch-api.jasonhub.workers.dev",
+  "pagesProject": "fund-watch",
+  "pagesUrl": "https://fund-watch-3o5.pages.dev",
+  "productionBranch": "main",
+  "d1Database": "fund-watch",
+  "apiBaseMode": "cross-site",
+  "previewBranches": ["fund-watch-v2"]
+}

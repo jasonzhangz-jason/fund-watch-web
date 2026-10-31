@@ -229,6 +229,47 @@ pnpm test:live        # 前端 E2E（跑在 Node 后端上，验证前端契约�
 ```
 ---
 
+## 十、配置与自检脚本（cloudflare.config.json）
+
+所有部署脚本读同一份配置，避免「脚本还按占位符给建议、实际资源早已不同」：
+
+```json
+{
+  "workerName": "fund-watch-api",
+  "workerUrl": "https://fund-watch-api.jasonhub.workers.dev",
+  "pagesProject": "fund-watch",
+  "pagesUrl": "https://fund-watch-3o5.pages.dev",
+  "productionBranch": "main",
+  "d1Database": "fund-watch",
+  "apiBaseMode": "cross-site",
+  "previewBranches": ["fund-watch-v2"]
+}
+```
+
+`apiBaseMode` 决定两件事，脚本会强制校验它们一致：
+
+| 模式 | 含义 | 构建 | Cookie |
+|---|---|---|---|
+| `cross-site` | Pages 与 Worker 不同站点（`*.pages.dev` + `*.workers.dev`） | 必须 `VITE_API_BASE=<workerUrl>` | `COOKIE_SAMESITE = "None"` |
+| `same-zone` | 自定义域 + Worker Route `/api/*` | 用相对路径，**不要**设 `VITE_API_BASE` | `COOKIE_SAMESITE = "Lax"` |
+
+```bash
+pnpm cf:check            # 本地一致性（快、离线）：配置↔toml↔迁移↔产物↔模式
+pnpm cf:check --online   # 再加：登录态与令牌权限、secret 列表、远端 D1、Worker/Pages 是否还存在
+pnpm cf:doctor           # 部署后四层探活（读同一份配置，无需参数）
+```
+
+`cf:check` 专门拦这些真实踩过的坑：
+
+- `database_id` 仍是占位符
+- 跨站模式却用 `Lax` cookie（登录后刷新掉登录态）
+- 构建时漏 `VITE_API_BASE`（前端 `/api` 打到 Pages → 405 / HTML）
+- 把「分支预览别名」写成生产域名（`xxx.fund-watch-3o5.pages.dev` 是四段域名）
+- 缺少 `ADMIN_PASSWORD` secret（内置管理员 `root/root`）
+- **Worker 或 Pages 项目被删**（`--online` 会报 `code: 10007` / 项目不存在）
+
+---
+
 ## 十一、部署后 404 排查
 
 一条命令定位（换成你的真实地址；只给一个也行）：
@@ -237,7 +278,12 @@ pnpm test:live        # 前端 E2E（跑在 Node 后端上，验证前端契约�
 node scripts/cf-doctor.mjs --site=https://你的站点域名 --worker=https://fund-watch-api.<子域>.workers.dev
 ```
 
-脚本按「Worker → Pages → 站点到 Worker 的路由 → 登录 Cookie」四层分别断言，并给出下一步。常见结论对照：
+脚本按「Worker → Pages → 站点到 Worker 的路由 → 登录 Cookie」四层分别断言，并给出下一步。
+路由这一层会**下载站点的 JS bundle 并搜索后端域名** —— 这是判断「前端到底指向哪里」的唯一可靠证据（Pages 永远不服务 `/api`，所以站点 `/api` 返回 HTML 不代表没配好）。
+
+> 若本机开了代理（如 `127.0.0.1:10808`）而 Node 直连会超时，脚本会自动识别 `HTTPS_PROXY` 或 Windows 系统代理并改用 curl 探测；也可显式指定 `--proxy=127.0.0.1:10808` 或 `--no-proxy`。
+
+常见结论对照：
 
 | 现象 | 原因 | 修法 |
 |---|---|---|

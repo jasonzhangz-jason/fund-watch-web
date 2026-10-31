@@ -9,14 +9,22 @@
  * 退出码：0 全通；1 有失败项。
  */
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 
 const args = process.argv.slice(2);
 const arg = (name) => {
   const hit = args.find((a) => a.startsWith(`--${name}=`));
   return hit ? hit.split('=').slice(1).join('=').replace(/\/+$/, '') : '';
 };
-const WORKER = arg('worker') || process.env.WORKER_URL || '';
-const SITE = arg('site') || process.env.SITE_URL || '';
+/** 默认地址来自 cloudflare.config.json，命令行/环境变量优先 */
+let cfg = {};
+try {
+  cfg = JSON.parse(readFileSync(new URL('../cloudflare.config.json', import.meta.url), 'utf8'));
+} catch {
+  /* 没有配置就只认参数 */
+}
+const WORKER = arg('worker') || process.env.WORKER_URL || String(cfg.workerUrl || '').replace(/\/+$/, '');
+const SITE = arg('site') || process.env.SITE_URL || String(cfg.pagesUrl || '').replace(/\/+$/, '');
 
 if (!WORKER && !SITE) {
   console.error('用法：node scripts/cf-doctor.mjs --site=https://你的域名 [--worker=https://xxx.workers.dev]');
@@ -284,6 +292,8 @@ if (SITE) {
     record('route', '站点 /api/health 命中 API', true, `runtime=${siteJson.runtime || '未声明'}`);
   } else if (bundleHasBase && bundleHasBase.found) {
     note('站点自身的 /api 路径返回 HTML 属正常（Pages 不提供 API）；前端已直连 Worker');
+  } else if (bundleHasBase && !bundleHasBase.found) {
+    note('站点 /api 返回 HTML 属正常（Pages 不提供 API）；真正的问题在上一项：bundle 未注入后端地址');
   } else if (viaSiteHtml) {
     // 关键症状：Pages 用 index.html 兜底了 API 路径 → 前端会拿到 HTML，JSON 解析失败
     record(

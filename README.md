@@ -445,6 +445,10 @@ pnpm cf:pages
 
 # 5) 本地开发（Worker + 本地 D1 模拟）
 pnpm cf:dev
+
+# 6) 配置驱动自检（读 cloudflare.config.json）
+pnpm cf:check            # 部署前：配置↔toml↔产物一致性（--online 加查 secret/D1/资源是否存在）
+pnpm cf:doctor           # 部署后：Worker/站点/路由/Cookie 四层探活
 ```
 
 **关键差异**（详见 [docs/cloudflare.md](docs/cloudflare.md)）

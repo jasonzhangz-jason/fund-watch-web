@@ -15,7 +15,7 @@ CORS_ORIGINS = ""
 PBKDF2_ITERATIONS = "100000"
 # 会话 Cookie 的 SameSite：同域部署保持 Lax（默认）；
 # 前后端**不同站点**（如 *.pages.dev + *.workers.dev）必须改 None，否则跨站请求不带 Cookie（登录后刷新就掉登录态）
-COOKIE_SAMESITE = "Lax"
+COOKIE_SAMESITE = "None"
 
 [[d1_databases]]
 binding = "DB"
