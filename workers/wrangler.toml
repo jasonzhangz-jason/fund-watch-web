@@ -21,7 +21,7 @@ COOKIE_SAMESITE = "None"
 binding = "DB"
 database_name = "fund-watch"
 # 执行 `npx wrangler d1 create fund-watch` 后把返回的 database_id 填到这里
-database_id = "20845407-9c41-4461-a3a3-1f2c23497464"
+database_id = ""
 migrations_dir = "migrations"
 
 # 说明：本项目不使用对象存储（无 R2 绑定）。

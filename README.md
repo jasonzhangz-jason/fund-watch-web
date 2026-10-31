@@ -88,10 +88,14 @@ fund-watch-web/
 │   ├── dev-server.mjs          #   后端调试服务器（静态[归档 UI] + /api + SQLite + 扫码二维码）
 │   ├── qr.mjs  db-tool.mjs     #   零依赖二维码编码器 / 数据库运维
 │   ├── shoot.mjs               #   前端逐页截图（与参考截图比对）
+│   ├── cf-preflight.mjs        #   ★ pnpm cf:check（配置驱动自检）
+│   ├── cf-doctor.mjs           #   ★ pnpm cf:doctor（部署后四层探活）
+│   ├── d1-export.mjs           #   本地 SQLite → D1 可执行 SQL（含 scrypt 告警）
 │   └── test-*.mjs  smoke-*.cjs  qr-*.mjs
 ├── legacy/index.html           # 归档版单页 UI（v1，84KB，仍由 8787 提供服务）
 ├── docs/backend-v1.md          # v1 后端完整文档（归档）
-├── docs/cloudflare.md          # Cloudflare 部署指南（Pages/Workers/D1 + 数据迁移）
+├── docs/cloudflare.md          # Cloudflare 部署指南（拓扑选择/数据迁移/404 排查/Runbook）
+├── cloudflare.config.json      # ★ 部署单一配置源（Worker/Pages/D1 真实值 + apiBaseMode）
 ├── workers/                    # Cloudflare Worker 后端（src/ + migrations/ + wrangler.toml）
 ├── shared/metrics.cjs          # Node 与 Worker 共用的运营指标定义
 ├── data/fundwatch.db           # 本地 SQLite（自动创建，已忽略）
@@ -181,10 +185,10 @@ fund-watch-web/
 # 后端（全部本地可跑，自带临时数据库，不污染 data/）
 pnpm test:docs          # 文档一致性：README 的 ER 图/字段说明 vs 真实建表语句：43 项断言
 pnpm test:correlation   # 基金相关性分析：结构 + **独立复算皮尔逊系数逐值比对 + 走势序列校验** + 窗口/缓存：39 项断言
-pnpm test:workers       # Cloudflare Worker 后端：用 node:sqlite 模拟 D1 真跑（路由/会话/级联删除/PBKDF2/数据导出）：80 项断言
+pnpm test:workers       # Cloudflare Worker 后端：用 node:sqlite 模拟 D1 真跑（路由/会话/级联删除/PBKDF2/数据导出/跨站 Cookie）：84 项断言
 pnpm test:auth          # 账号/自选/会话：20 项断言
 pnpm test:admin         # 后台权限/用户管理/运营统计 + 级联删除验证（会话/自选/持仓/快照）+ 10 项指标明细一致性：60 项断言
-pnpm test:portfolio     # 账本服务：账户资产/当日收益算术、每日快照落库、行情缓存、重启仍在：28 项断言
+pnpm test:portfolio     # 账本服务：账户资产/当日收益算术、每日快照落库、行情缓存、持仓穿透口径、重启仍在：44 项断言
 pnpm test:persistence   # 重启/崩溃/单文件迁移不丢数据：11 项断言
 pnpm test:api           # 数据接口回归（联网）
 pnpm test:qr            # 自研二维码编码器 vs 权威库：1280/1280 位一致
@@ -204,6 +208,17 @@ pnpm typecheck          # TS 类型检查
 pnpm build              # 生产构建
 pnpm shoot              # 逐页截图 → shots/（需 Chromium，见下）
 ```
+
+### ☁️ 部署自检与线上探活（读 `cloudflare.config.json`）
+
+```bash
+pnpm cf:check            # 部署前：配置 ↔ wrangler.toml ↔ 迁移 ↔ dist 产物 ↔ apiBaseMode 一致性（离线、秒级）
+pnpm cf:check --online   # 再加：登录态与令牌权限、secret 列表、远端 D1、Worker/Pages 资源是否还存在
+pnpm cf:doctor           # 部署后：Worker / 站点 / 站点→Worker 路由 / 登录 Cookie 四层探活，无需参数
+```
+
+`cf:check` 会拦下本项目真实踩过的 6 类坑：占位 `database_id`、跨站却用 `Lax`、
+构建漏 `VITE_API_BASE`、把分支预览别名当生产域名、缺 `ADMIN_PASSWORD`、**Worker/Pages 被删**。
 
 ### 前端逐页截图（还原度自检）
 ```bash
@@ -421,52 +436,64 @@ erDiagram
 
 一套代码两种部署目标（Node/Vercel 与 Cloudflare 并存），前端契约完全一致；**不使用对象存储（无 R2）**。
 
+### 当前线上（本次会话已部署并验收）
+
+| 用途 | 地址 |
+|---|---|
+| 站点 / 后台 | https://fund-watch-3o5.pages.dev · `/admin.html` |
+| API（Worker） | https://fund-watch-api.jasonhub.workers.dev |
+| 数据库 | D1 `fund-watch`（id `20845407-…9464`，7 张表） |
+| 拓扑 | **跨站**（`*.pages.dev` ↔ `*.workers.dev`）→ 构建注入 `VITE_API_BASE`，Cookie `SameSite=None` |
+
 | 位置 | 产品 | 落地物 |
 |---|---|---|
-| 前端 | **Cloudflare Pages** | `dist/`（含 `admin.html` 后台页、`_headers` 缓存与安全头） |
+| 前端 | **Cloudflare Pages** | `dist/`（含 `admin.html`、`_headers` 缓存与安全头） |
 | 后端 | **Cloudflare Workers** | `workers/`（统一路由，替代 22 个 Vercel 函数） |
 | 数据库 | **Cloudflare D1** | `workers/migrations/0001_init.sql`（7 张表，与本地 SQLite 同结构） |
-| 数据备份 | **即时下载** | `GET /api/admin/backup`：现算全库 NDJSON → gzip → 浏览器下载（不落任何存储） |
+| 数据备份 | **即时下载** | `GET /api/admin/backup`：现算全库 NDJSON → gzip → 下载（不落任何存储） |
 
-```bash
-# 1) 创建 D1，把 database_id 填进 workers/wrangler.toml
-wrangler d1 create fund-watch
+### 日常发布（两条命令）
 
-# 2) 建表（--local 本地 / --remote 线上）
-pnpm cf:db:migrate:local
-pnpm cf:db:migrate
+```powershell
+# 后端（wrangler.toml 的 [vars] 变更也靠它生效）
+wrangler deploy --config workers/wrangler.toml
 
-# 3) 部署后端 → https://fund-watch-api.<子域>.workers.dev
-pnpm cf:deploy
-
-# 4) 部署前端（分域时注入后端地址）
-VITE_API_BASE=https://fund-watch-api.<子域>.workers.dev pnpm build
-pnpm cf:pages
-
-# 5) 本地开发（Worker + 本地 D1 模拟）
-pnpm cf:dev
-
-# 6) 配置驱动自检（读 cloudflare.config.json）
-pnpm cf:check            # 部署前：配置↔toml↔产物一致性（--online 加查 secret/D1/资源是否存在）
-pnpm cf:doctor           # 部署后：Worker/站点/路由/Cookie 四层探活
+# 前端：跨站必须带 VITE_API_BASE（否则 /api 会打到 Pages → 405/HTML）
+$env:VITE_API_BASE="https://fund-watch-api.jasonhub.workers.dev"; pnpm build
+wrangler pages deploy dist --project-name fund-watch --branch main
 ```
 
-**关键差异**（详见 [docs/cloudflare.md](docs/cloudflare.md)）
+首次接线：`wrangler d1 create fund-watch` → 把 id 填进 `workers/wrangler.toml` →
+`pnpm cf:db:migrate` → `wrangler secret put ADMIN_PASSWORD`（**必须在第一次请求前**，
+否则内置管理员是 `root/root`）→ 部署前后端 → `pnpm cf:doctor`。
+
+### 运维 Runbook（本次会话真实踩过的坑）
+
+| 症状 | 根因 | 处理 |
+|---|---|---|
+| 页面能开、数据全空 / 接口 404 | 构建时漏 `VITE_API_BASE`，前端 `/api` 落到 Pages 被兜底成 `index.html` | 带 `VITE_API_BASE` 重新构建发布；`cf:check` 会扫 `dist` 的 bundle 校验是否注入 |
+| `POST /api/*` 返回 **405** | 请求打到 Pages（静态主机只接受 GET/HEAD） | 改用 Worker 域名；或给自定义域加 Worker Route `<域>/api/*` |
+| 登录成功、刷新即退出 | 跨站 Cookie 用了 `SameSite=Lax` | `COOKIE_SAMESITE="None"` 后重新 deploy（http 下自动回落 `Lax`，避免被丢弃） |
+| API 报 `error code: 1042`、部署记录消失 | **Worker 与 Pages 项目被删除**（D1 保留） | `wrangler deploy` + `wrangler pages project create` + `pages deploy` 重建；D1 数据与 Time Travel 书签不受影响 |
+| 公网 `root/root` 能登录 | 未设 `ADMIN_PASSWORD`，且种子只在账号缺失时创建（改 secret 不会改已有密码） | 重置密码（PBKDF2 写入 D1）+ `wrangler secret put ADMIN_PASSWORD`，**两步都要做** |
+| 分支预览 `/api` 也 405 | 预览环境用了修复前的旧产物 | 用同一份带 `VITE_API_BASE` 的 `dist` 部署到该分支（`--branch <分支>`） |
+
+### 关键差异（详见 [docs/cloudflare.md](docs/cloudflare.md)）
 
 | 能力 | Node / Vercel | Cloudflare |
 |---|---|---|
 | 数据库 | `node:sqlite`（同步） | **D1（异步）**，SQL 方言一致 |
 | 密码哈希 | scrypt（并兼容校验 PBKDF2） | **PBKDF2-SHA256（WebCrypto）** → 两端互认；旧 scrypt 账号需重置密码 |
-| 会话 | HttpOnly Cookie + `sessions` 表 | 同（跨域时 Worker 回显 Origin + 允许凭据） |
+| 会话 | HttpOnly Cookie + `sessions` 表 | 同（跨站靠回显 Origin + `Allow-Credentials` + `SameSite=None`） |
 | 备份 | `VACUUM INTO` 本地文件 | **导出下载**：`GET /api/admin/backup` → NDJSON.gz（无存储，自行归档） |
 | 迁移已有数据 | — | `pnpm d1:export` → `wrangler d1 execute --file` |
+| 资源数量 | 22 个 Vercel 函数 | **1 个 Worker**（冷启动更少） |
 
-> **域名拓扑很重要**：推荐「同域」——Pages 绑自定义域，Worker 用 Route 接管 `/<域>/api/*`，
-> 前端零改动且无跨域 Cookie 问题；分域部署需配置 `VITE_API_BASE` 与 `CORS_ORIGINS`，
-> 且跨站 Cookie 需 `SameSite=None; Secure`（文档给了取舍说明）。
+> **域名拓扑很重要**：同域（Pages 绑自定义域 + Worker Route `<域>/api/*`）最稳——前端零改动、
+> 无跨站 Cookie（Safari 不会拦）；分域部署必须配 `VITE_API_BASE` 与 `COOKIE_SAMESITE=None`。
 
 ```bash
-pnpm test:workers    # Worker 端 80 项断言（本机用 node:sqlite 模拟 D1 真跑，无 R2）
+pnpm test:workers    # Worker 端 84 项断言（本机用 node:sqlite 模拟 D1 真跑，无 R2）
 ```
 
 ---
@@ -510,7 +537,7 @@ pnpm db:checkpoint   # 手动合并 WAL
 | **剔除仿制 UI** | 去掉每页顶部的模拟 iOS 状态栏与「基金助手」标题栏（顶部改用 `safe-area-inset-top` 适配真机）、去掉详情页推广 banner |
 | **后续：三页顶部标题区也剔除** | 见上方「三页顶部标题区剔除」一行 |
 | 详情页真实化 | 用 `/api/detail` 的净值走势（近 240 交易日，SVG）替换演示分时图；新增「阶段收益 / 申购费率 / 起购金额」卡片；重仓股票改接 `/api/holdings`（真实季度、股票代码、持仓市值） |
-| 新增端到端测试 | `pnpm test:live`（64 项断言）：未登录不含静态数据、三页无顶部标题、注册→自选/持仓落库、下拉刷新与 60s 自动刷新（实测等待 62s 观察自动重取）、真实重仓股、详情页数值与接口逐项比对、我的页账号信息、**管理员后台入口与新标签页后台页**、重启后端仍在 |
+| 新增端到端测试 | `pnpm test:live`（**144 项断言**）：未登录不含静态数据、三页无顶部标题、注册→自选/持仓落库、下拉刷新与 60s 自动刷新（实测等待 62s 观察自动重取）、真实重仓股、详情页数值与接口逐项比对、我的页账号信息、**管理员后台入口与新标签页后台页**、重启后端仍在 |
 | **移除全部静态数据** | 删除 `src/data/mock.ts` 与无引用的 `IntradayChart.tsx`；未登录时账本/自选/我的/添加持仓只显示空态与登录引导（账户资产 0.00），搜索/详情接口失败时显示「—」与空态提示；`shoot.mjs` 改为通过真实接口播种演示账号后截图（12 页） |
 | **新增「我的」页** | 底部 TabBar 扩展为 账本 / 自选 / **我的**；展示头像/用户名/角色 + 持仓合计与当日收益 + 我的自选/持仓明细 + 退出登录（不罗列接口字段与技术说明） |
 | **管理员后台页** | 新增独立多页入口 `admin.html`（`src/admin/`，桌面布局）：系统运营数据 10 项指标（账号/自选/账本/数据四组）+ 用户列表搜索 + 页内管理员登录 + 60s 自动刷新；「我的」页头像栏为管理员显示「后台管理」按钮并**新标签页**打开；**剔除**原「我的」页内的后台概览栏；`/api/admin/stats` 扩展 holdings/quotes/snapshot 等运营字段 |
@@ -533,6 +560,20 @@ pnpm db:checkpoint   # 手动合并 WAL
 | **账本服务化（库表扩展）** | 新增 `fund_quotes`（行情缓存）/ `position_daily`（每只每日快照）/ `account_daily`（账户每日资产快照）三张表与 `server/market.cjs`、`server/portfolio.cjs` 两个服务模块；新增 `/api/portfolio`、`/api/portfolio/history`、`/api/portfolio/daily`、`/api/quotes`、`/api/watchlist/reorder`；**账户资产与当日收益改为服务端计算并落库**，`/api/estimate`、`/api/nav` 复用同一套上游实现与缓存 |
 | preview 代理 | `vite preview` 同样代理 `/api`，构建产物也能本地联调 |
 
+### ☁️ Cloudflare 迁移动工记录（本次会话）
+
+| 事项 | 落地 |
+|---|---|
+| **后端上 Workers** | `workers/src/`：`index.js`（统一路由 + CORS）、`db.js`（**D1 异步适配层** `one/all/run/batch`）、`auth.js`（**WebCrypto PBKDF2** + `sameSiteOf`）、`upstream.js`（行情/重仓股/净值历史，行情缓存落 D1）、`portfolio.js`（账本聚合/快照/穿透/相关性）、`admin.js`（统计/用户/指标/导出） |
+| **同步 → 异步** | `node:sqlite` 是同步 API、D1 是异步；账本聚合与每日快照改为依赖注入 `db` 的异步实现，口径与 Node 端逐条对齐（`test:workers` 逐值比对） |
+| **密码算法跨运行时** | 新密码为 `pbkdf2$sha256$<iter>$<hex>`（Workers 生成），Node 端 `verifyPassword` 也能校验；修复了一个真实缺陷：**Worker 用 salt 字节、Node 用 salt 字符串**做 PBKDF2 → 两端互不认 |
+| **避免双实现漂移** | 运营指标定义抽成 `shared/metrics.cjs`，Node 与 Worker 共用（`test:admin` 60 项验证提取后行为不变） |
+| **剔除 R2** | 初版用 R2 存 D1 备份，后按需求移除绑定与上传/列表/下载接口，改为 **`GET /api/admin/backup` 现算 NDJSON → gzip → 直接下载**（不落任何存储） |
+| **部署配置驱动** | 新增 `cloudflare.config.json`（Worker/Pages/D1 真实值 + `apiBaseMode`）；`pnpm cf:check`（离线一致性，含 **扫 dist bundle 校验是否注入后端地址**）与 `pnpm cf:doctor`（Worker/站点/路由/Cookie 四层探活，自带系统代理识别） |
+| **前端跨域支持** | `src/lib/api.ts` 增加构建期 `VITE_API_BASE` 与运行期 `localStorage` 覆盖；账号接口 `credentials:'include'`、公开接口 `'omit'`（配合 Worker 的 `Access-Control-Allow-Origin: *`） |
+| **上线验收** | 真实浏览器 E2E（13 项）：UI 注册 → Cookie `SameSite=None; Secure; HttpOnly` → **刷新后仍登录** → 公开搜索 → 写自选到 D1 → 账本接口正常 |
+| **事故与恢复** | Worker 与 Pages 项目曾被删除（D1 未受影响，Time Travel 书签可用）→ 用同一套代码与产物重建，域名不变；管理员密码已从 `root/root` 轮换为随机强密码，`ADMIN_PASSWORD` secret 与 D1 哈希同步 |
+
 ---
 
 ## 📌 说明与注意
@@ -541,7 +582,7 @@ pnpm db:checkpoint   # 手动合并 WAL
 2. **持仓与自选都已落库**：`watchlist` / `positions` 两张表都在 SQLite 中，重启后端数据仍在（`pnpm test:live` 第 8 步会真杀进程再验证）。持仓排序（置顶/上移/下移）与批量删除同样写库。
 3. **归档版 UI**：`legacy/index.html` 与 v1 界面一致，仅为保留与回归测试；新功能一律在 `src/` 中开发。
 4. **二维码/手机调试**：`pnpm start` 会自动打印终端二维码与局域网地址；若端口被占用，请先结束占用进程或改用 `PORT=9000 WEB_PORT=5174 pnpm start`。
-5. **安全**：密码使用 scrypt + 随机盐；会话为 HttpOnly + SameSite=Lax Cookie（生产环境带 Secure）；公开部署前务必改掉默认 `root/root` 并设置 `DB_PATH` 指向持久化卷（Vercel 默认 `/tmp` 会随实例重启清空）。
+5. **安全**：密码使用 scrypt + 随机盐（Cloudflare 侧为 **PBKDF2-SHA256**，两套运行时互认）；会话为 HttpOnly Cookie。**跨站部署**（`*.pages.dev` + `*.workers.dev`）必须 `COOKIE_SAMESITE=None`，Safari/无痕仍可能拦第三方 Cookie——要稳定请用**同域**（自定义域 + `/api/*` Route）。公开部署前务必：① 改掉默认 `root/root` 并设 `ADMIN_PASSWORD` secret ② 用 `pnpm cf:check --online` 复核 ③ 本地部署时把 `DB_PATH` 指向持久化卷（Vercel 默认 `/tmp` 会随实例重启清空）。
 
 ---
 
