@@ -5,12 +5,12 @@
 | 位置 | 产品 | 说明 |
 |---|---|---|
 | 前端 | **Cloudflare Pages** | 托管 `dist/`（Vite 构建的静态站，含 `admin.html` 后台页） |
-| 后端 | **Cloudflare Workers** | `workers/` 里的 Worker 提供全部 `/api/*`（替代 Vercel Functions） |
+| 后端 | **Cloudflare Workers** | `backend/workers/` 里的 Worker 提供全部 `/api/*`（替代 Vercel Functions） |
 | 数据库 | **Cloudflare D1** | SQLite 兼容，替代 `node:sqlite` 本地库；7 张表结构一致 |
 | 数据备份 | **无存储，改为即时下载** | 管理员请求 `GET /api/admin/backup` 即下载：Worker 现算全库 NDJSON → gzip，自行归档 |
 
-> 代码已就绪：`workers/`（Worker 实现）、`workers/migrations/0001_init.sql`（D1 建表）、
-> `shared/metrics.cjs`（Node 与 Worker 共用的指标定义）。
+> 代码已就绪：`backend/workers/`（Worker 实现）、`backend/workers/migrations/0001_init.sql`（D1 建表）、
+> `backend/shared/metrics.cjs`（Node 与 Worker 共用的指标定义）。
 > 本机验证：`pnpm test:workers`（用 node:sqlite 模拟 D1，**80 项断言**覆盖路由/会话/D1 读写/级联删除/PBKDF2/数据导出）。
 
 ---
@@ -27,15 +27,15 @@ wrangler login           # 授权 Cloudflare 账号
 ## 二、创建资源
 
 ```bash
-# 1) D1 数据库（创建后把 database_id 填进 workers/wrangler.toml）
+# 1) D1 数据库（创建后把 database_id 填进 backend/workers/wrangler.toml）
 wrangler d1 create fund-watch
 
 # 2) 建表（本地 + 线上）
-wrangler d1 migrations apply fund-watch --local --config workers/wrangler.toml
-wrangler d1 migrations apply fund-watch --remote --config workers/wrangler.toml
+wrangler d1 migrations apply fund-watch --local --config backend/workers/wrangler.toml
+wrangler d1 migrations apply fund-watch --remote --config backend/workers/wrangler.toml
 ```
 
-`workers/wrangler.toml` 里需要确认/修改的项：
+`backend/workers/wrangler.toml` 里需要确认/修改的项：
 
 ```toml
 name = "fund-watch-api"                     # Worker 名称（决定 *.workers.dev 域名）
@@ -49,9 +49,9 @@ database_id = "<wrangler d1 create 返回的 id>"
 **密钥（不要写进仓库）**：
 
 ```bash
-wrangler secret put ADMIN_PASSWORD --config workers/wrangler.toml   # 内置管理员密码（默认 root）
+wrangler secret put ADMIN_PASSWORD --config backend/workers/wrangler.toml   # 内置管理员密码（默认 root）
 # 可选：跨域白名单（分域部署时把 Pages 域名加进去）
-wrangler secret put CORS_ORIGINS --config workers/wrangler.toml     # 如 https://fund.example.com
+wrangler secret put CORS_ORIGINS --config backend/workers/wrangler.toml     # 如 https://fund.example.com
 ```
 
 > 首次请求时 Worker 会懒创建内置管理员（`ADMIN_USERNAME` 默认 `root`）。
@@ -62,7 +62,7 @@ wrangler secret put CORS_ORIGINS --config workers/wrangler.toml     # 如 https:
 ## 三、部署后端 Worker
 
 ```bash
-wrangler deploy --config workers/wrangler.toml
+wrangler deploy --config backend/workers/wrangler.toml
 # → https://fund-watch-api.<你的子域>.workers.dev
 ```
 
@@ -127,7 +127,7 @@ wrangler pages deploy dist --project-name fund-watch
 > 跨域 + HttpOnly Cookie 需要浏览器同站策略允许：本项目 Cookie 为 `SameSite=Lax`，
 > 若前后端是**不同站**（例如 `*.pages.dev` 与 `*.workers.dev`），浏览器会拒绝发送 Cookie。
 > **因此生产请用拓扑 1，或把两个自定义域放在同一主域下**（如 `fund.example.com` + `api.example.com`
-> 并设置 `SameSite=None; Secure`）。要改成 `SameSite=None` 时可调整 `workers/src/auth.js` 的 `sessionCookie()`。
+> 并设置 `SameSite=None; Secure`）。要改成 `SameSite=None` 时可调整 `backend/workers/src/auth.js` 的 `sessionCookie()`。
 
 ---
 
@@ -138,14 +138,14 @@ wrangler pages deploy dist --project-name fund-watch
 pnpm d1:export            # 生成 d1-data.sql（已在 .gitignore 中）
 
 # 2) 导入 D1（建议空库执行；脚本内含 PRAGMA defer_foreign_keys = true）
-wrangler d1 execute fund-watch --remote --file=./d1-data.sql --config workers/wrangler.toml
+wrangler d1 execute fund-watch --remote --file=./d1-data.sql --config backend/workers/wrangler.toml
 ```
 
 **密码哈希注意**：导出脚本会统计旧版 **scrypt** 账号并警告 —— Workers 的 WebCrypto **无法验证 scrypt**，
 这些账号迁移后不能登录。处理办法（二选一）：
 
 - 用管理端「重置密码」（写入 PBKDF2 格式，迁移后即可用）；
-- 或在 Node 端先批量改密（`server/auth.cjs` 已提供 `hashPasswordPbkdf2`）。
+- 或在 Node 端先批量改密（`backend/server/auth.cjs` 已提供 `hashPasswordPbkdf2`）。
 
 ---
 
@@ -229,7 +229,7 @@ pnpm test:live        # 前端 E2E（跑在 Node 后端上，验证前端契约�
 ```
 ---
 
-## 十、配置与自检脚本（cloudflare.config.json）
+## 十、配置与自检脚本（backend/cloudflare.config.json）
 
 所有部署脚本读同一份配置，避免「脚本还按占位符给建议、实际资源早已不同」：
 
@@ -275,7 +275,7 @@ pnpm cf:doctor           # 部署后四层探活（读同一份配置，无需�
 一条命令定位（换成你的真实地址；只给一个也行）：
 
 ```bash
-node scripts/cf-doctor.mjs --site=https://你的站点域名 --worker=https://fund-watch-api.<子域>.workers.dev
+node scripts/deploy/cf-doctor.mjs --site=https://你的站点域名 --worker=https://fund-watch-api.<子域>.workers.dev
 ```
 
 脚本按「Worker → Pages → 站点到 Worker 的路由 → 登录 Cookie」四层分别断言，并给出下一步。
@@ -295,7 +295,7 @@ node scripts/cf-doctor.mjs --site=https://你的站点域名 --worker=https://fu
 
 ### 分域部署的 SameSite 开关
 
-`workers/wrangler.toml` 的 `[vars]`：
+`backend/workers/wrangler.toml` 的 `[vars]`：
 
 ```toml
 COOKIE_SAMESITE = "None"   # 仅当前后端不同站点时；同域保持 Lax

@@ -1,7 +1,7 @@
 // QR 编码器自检：与权威库 qrcode 逐位比对（需要可选依赖 qrcode）
 // 运行：NODE_PATH=<有 qrcode 的 node_modules> node scripts/qr-verify.mjs
 import { createRequire } from 'module';
-import { qrMatrix } from './qr.mjs';
+import { qrMatrix } from '../lib/qr.mjs';
 
 const require = createRequire(import.meta.url);
 let QRCode;

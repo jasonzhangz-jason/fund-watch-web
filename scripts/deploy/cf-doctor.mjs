@@ -19,7 +19,7 @@ const arg = (name) => {
 /** 默认地址来自 cloudflare.config.json，命令行/环境变量优先 */
 let cfg = {};
 try {
-  cfg = JSON.parse(readFileSync(new URL('../cloudflare.config.json', import.meta.url), 'utf8'));
+  cfg = JSON.parse(readFileSync(new URL('../../backend/cloudflare.config.json', import.meta.url), 'utf8'));
 } catch {
   /* 没有配置就只认参数 */
 }

@@ -11,10 +11,10 @@ import { readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { toTerminal, toSVG } from './qr.mjs';
+import { toTerminal, toSVG } from '../lib/qr.mjs';
 
 const require = createRequire(import.meta.url);
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PORT = process.env.PORT || 8787;
 const OPEN = process.argv.includes('--open');
 const NO_QR = process.argv.includes('--no-qr');
@@ -23,16 +23,16 @@ const NO_QR = process.argv.includes('--no-qr');
 const LEGACY_UI = existsSync(path.join(ROOT, 'legacy', 'index.html')) ? 'legacy/index.html' : 'index.html';
 
 const handlers = {
-  search: require('../api/search.js'),
-  nav: require('../api/nav.js'),
-  estimate: require('../api/estimate.js'),
-  detail: require('../api/detail.js'),
-  holdings: require('../api/holdings.js'),
+  search: require('../../backend/api/search.js'),
+  nav: require('../../backend/api/nav.js'),
+  estimate: require('../../backend/api/estimate.js'),
+  detail: require('../../backend/api/detail.js'),
+  holdings: require('../../backend/api/holdings.js'),
 };
 // 账号与自选（SQLite，与 Vercel 函数共用同一套实现）
-const authLib = require('../server/auth.cjs');
-const accountHandlers = require('../server/handlers.cjs');
-const { getDbPath, isPersistent, dbInfo, closeDb } = require('../server/db.cjs');
+const authLib = require('../../backend/server/auth.cjs');
+const accountHandlers = require('../../backend/server/handlers.cjs');
+const { getDbPath, isPersistent, dbInfo, closeDb } = require('../../backend/server/db.cjs');
 
 function readJsonBody(req) {
   return new Promise((resolve) => {

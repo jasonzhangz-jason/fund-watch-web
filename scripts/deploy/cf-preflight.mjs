@@ -18,10 +18,10 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const CFG_PATH = path.join(ROOT, 'cloudflare.config.json');
-const TOML_PATH = path.join(ROOT, 'workers', 'wrangler.toml');
-const MIG_DIR = path.join(ROOT, 'workers', 'migrations');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const CFG_PATH = path.join(ROOT, 'backend', 'cloudflare.config.json');
+const TOML_PATH = path.join(ROOT, 'backend', 'workers', 'wrangler.toml');
+const MIG_DIR = path.join(ROOT, 'backend', 'workers', 'migrations');
 const DIST = path.join(ROOT, 'dist');
 const PLACEHOLDER = '00000000-0000-0000-0000-000000000000';
 const ONLINE = process.argv.includes('--online');
@@ -153,7 +153,7 @@ if (!existsSync(TOML_PATH)) {
   else bad(`name（${name}）与 cloudflare.config.json 的 workerName（${cfg.workerName}）不一致`);
 
   const mainFile = (toml.match(/^main\s*=\s*"([^"]*)"/m) || [])[1];
-  const mainPath = mainFile ? path.join(ROOT, 'workers', mainFile) : '';
+  const mainPath = mainFile ? path.join(ROOT, 'backend', 'workers', mainFile) : '';
   mainPath && existsSync(mainPath) ? ok(`main 入口存在：workers/${mainFile}`) : bad(`main 入口不存在：${mainFile || '(未声明)'}`);
 
   /\[\[d1_databases\]\]/.test(toml) ? ok('已声明 D1 绑定') : bad('缺少 [[d1_databases]] 绑定');
@@ -171,7 +171,7 @@ if (!existsSync(TOML_PATH)) {
   else ok(`database_id 已填：${id.slice(0, 8)}…${id.slice(-4)}`);
 
   const migDirCfg = (toml.match(/migrations_dir\s*=\s*"([^"]*)"/) || [])[1];
-  migDirCfg && existsSync(path.join(ROOT, 'workers', migDirCfg))
+  migDirCfg && existsSync(path.join(ROOT, 'backend', 'workers', migDirCfg))
     ? ok(`migrations_dir 存在：workers/${migDirCfg}`)
     : wa(`migrations_dir 未声明或不存在（${migDirCfg || '无'}）`);
 
@@ -242,7 +242,7 @@ if (!ONLINE) {
 } else if (!cfg) {
   wa('缺少配置，跳过在线检查');
 } else {
-  const sec = wr(['secret', 'list', '--config', 'workers/wrangler.toml']);
+  const sec = wr(['secret', 'list', '--config', 'backend/workers/wrangler.toml']);
   if (/ADMIN_PASSWORD/.test(sec.out)) {
     ok('已配置 ADMIN_PASSWORD secret（注意：改 secret 不会改已有账号密码）');
   } else {
@@ -250,7 +250,7 @@ if (!ONLINE) {
   }
   if (/CORS_ORIGINS/.test(sec.out)) info('CORS_ORIGINS 以 secret 形式存在（与 [vars] 同名时以 secret 为准）');
 
-  const d1 = wr(['d1', 'execute', cfg.d1Database, '--remote', '--config', 'workers/wrangler.toml', '--command', 'SELECT COUNT(*) AS users FROM users']);
+  const d1 = wr(['d1', 'execute', cfg.d1Database, '--remote', '--config', 'backend/workers/wrangler.toml', '--command', 'SELECT COUNT(*) AS users FROM users']);
   if (/"users"\s*:\s*\d+/.test(d1.out)) {
     const n = (d1.out.match(/"users"\s*:\s*(\d+)/) || [])[1];
     ok(`远端 D1 可查询，users = ${n}`);
@@ -260,9 +260,9 @@ if (!ONLINE) {
   }
 
   // 资源是否存在（本项目真实发生过「Worker 与 Pages 项目同时被删」）
-  const dep = wr(['deployments', 'list', '--config', 'workers/wrangler.toml']);
+  const dep = wr(['deployments', 'list', '--config', 'backend/workers/wrangler.toml']);
   if (/does not exist/i.test(dep.out)) {
-    bad(`Worker "${cfg.workerName}" 在账号里不存在（被删了？）→ 重新 ${wranglerCmd} deploy --config workers/wrangler.toml`);
+    bad(`Worker "${cfg.workerName}" 在账号里不存在（被删了？）→ 重新 ${wranglerCmd} deploy --config backend/workers/wrangler.toml`);
   } else if (dep.out.trim()) {
     ok(`Worker 存在：${cfg.workerName}`);
   } else {
@@ -289,7 +289,7 @@ if (cfg) {
   console.log('\n【8】按当前配置的部署命令');
   console.log(`
   # 后端（含 [vars] 变更）
-  ${w} deploy --config workers/wrangler.toml
+  ${w} deploy --config backend/workers/wrangler.toml
 
   # 前端（${cfg.apiBaseMode}${cfg.apiBaseMode === 'cross-site' ? '：必须带 VITE_API_BASE' : '：不要带 VITE_API_BASE'}）
   ${envLine}pnpm build

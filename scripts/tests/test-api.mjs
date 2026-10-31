@@ -19,7 +19,7 @@ const cases = [
 ];
 
 for (const [name, query] of cases) {
-  const mod = require('../api/' + name + '.js');
+  const mod = require('../../backend/api/' + name + '.js');
   const res = makeRes();
   await mod({ query }, res);
   const j = res._j;

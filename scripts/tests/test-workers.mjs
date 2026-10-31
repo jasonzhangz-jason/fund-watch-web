@@ -16,10 +16,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const require = createRequire(import.meta.url);
 /** Windows 下动态 import 必须用 file:// URL */
-const workerUrl = new URL('../workers/src/index.js', import.meta.url).href;
+const workerUrl = new URL('../../backend/workers/src/index.js', import.meta.url).href;
 const worker = (await import(workerUrl)).default;
 
 let pass = 0;
@@ -101,7 +101,7 @@ async function call(method, p, body, opts = {}) {
 try {
   /* ---------------- 结构：migration SQL 可应用 ---------------- */
   console.log('\n【1】D1 迁移与健康检查');
-  const migration = readFileSync(path.join(ROOT, 'workers/migrations/0001_init.sql'), 'utf8');
+  const migration = readFileSync(path.join(ROOT, 'backend/workers/migrations/0001_init.sql'), 'utf8');
   sqlite.exec(migration);
   const tables = sqlite
     .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
@@ -163,7 +163,7 @@ try {
   check('密码哈希为 pbkdf2 格式', String(rootRow.password_hash).startsWith('pbkdf2$sha256$'), String(rootRow.password_hash).slice(0, 30));
 
   // 双运行时互认：Node 端 auth.cjs 能校验 Worker 生成的哈希
-  const nodeAuth = require(path.join(ROOT, 'server/auth.cjs'));
+  const nodeAuth = require(path.join(ROOT, 'backend/server/auth.cjs'));
   check('Node 端可校验 Worker 生成的 PBKDF2 哈希（互认）', nodeAuth.verifyPassword('root', rootRow.salt, rootRow.password_hash) === true);
   check('Node 端对错误密码返回 false', nodeAuth.verifyPassword('wrong', rootRow.salt, rootRow.password_hash) === false);
 

@@ -17,7 +17,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const ROOT = path.resolve(__dirname, '..');
+const ROOT = path.resolve(__dirname, '..', '..');
 const API_PORT = 8788;
 const WEB_PORT = 4174;
 const WEB = `http://127.0.0.1:${WEB_PORT}`;
@@ -69,7 +69,7 @@ async function waitFor(url, timeoutMs = 30000) {
 
 const procs = [];
 function startApi() {
-  const p = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'scripts/dev-server.mjs', '--no-qr'], {
+  const p = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'scripts/dev/dev-server.mjs', '--no-qr'], {
     cwd: ROOT,
     env: { ...process.env, PORT: String(API_PORT), DB_PATH: DB },
     stdio: 'ignore',

@@ -16,7 +16,7 @@ let db = null;
 let dbPath = null;
 let persistent = false;
 
-const PROJECT_ROOT = path.resolve(__dirname, '..');
+const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 
 /** 探测目录是否可写（真实写入一个临时文件） */
 function isWritableDir(dir) {

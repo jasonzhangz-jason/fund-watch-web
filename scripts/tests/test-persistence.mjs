@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PORT = 8789;
 const BASE = `http://127.0.0.1:${PORT}`;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fundwatch-persist-'));
@@ -18,7 +18,7 @@ const check = (name, cond, extra = '') => {
   if (cond) { pass++; console.log(`  ✅ ${name}`); } else { fail++; console.log(`  ❌ ${name} ${extra}`); }
 };
 
-const start = (dbPath = DB) => spawn(process.execPath, ['scripts/dev-server.mjs', '--no-qr'], {
+const start = (dbPath = DB) => spawn(process.execPath, ['scripts/dev/dev-server.mjs', '--no-qr'], {
   cwd: ROOT, env: { ...process.env, PORT: String(PORT), DB_PATH: dbPath }, stdio: 'ignore',
 });
 

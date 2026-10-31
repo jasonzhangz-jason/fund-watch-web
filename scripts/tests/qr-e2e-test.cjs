@@ -4,7 +4,7 @@ const path = require('path');
 const { pathToFileURL } = require('url');
 
 (async () => {
-  const { toTerminal } = await import(pathToFileURL(path.join(__dirname, 'qr.mjs')).href);
+  const { toTerminal } = await import(pathToFileURL(path.join(__dirname, '..', 'lib', 'qr.mjs')).href);
   const jsqrPath = require.resolve('jsqr');
 
   const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });

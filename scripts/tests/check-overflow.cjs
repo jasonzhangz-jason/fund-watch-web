@@ -16,7 +16,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const ROOT = path.resolve(__dirname, '..');
+const ROOT = path.resolve(__dirname, '..', '..');
 const API_PORT = 8792;
 const WEB_PORT = 4178;
 const WEB = `http://127.0.0.1:${WEB_PORT}`;
@@ -149,7 +149,7 @@ const PROBE = () => {
   const procs = [];
   try {
     const puppeteer = loadPuppeteer();
-    server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'scripts/dev-server.mjs', '--no-qr'], {
+    server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'scripts/dev/dev-server.mjs', '--no-qr'], {
       cwd: ROOT,
       env: { ...process.env, PORT: String(API_PORT), DB_PATH: DB },
       stdio: 'ignore',

@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
  * 一键启动前后端：pnpm start
  */
 export default defineConfig({
+  root: 'web',
   plugins: [react(), tailwindcss()],
   server: {
     port: 5173,
@@ -35,12 +36,13 @@ export default defineConfig({
   },
   // 多页应用：前台 index.html + 后台管理 admin.html（管理员以新标签页打开）
   build: {
-    outDir: 'dist',
+    outDir: '../dist',
+    emptyOutDir: true,
     sourcemap: false,
     rollupOptions: {
       input: {
-        main: fileURLToPath(new URL('./index.html', import.meta.url)),
-        admin: fileURLToPath(new URL('./admin.html', import.meta.url)),
+        main: fileURLToPath(new URL('./web/index.html', import.meta.url)),
+        admin: fileURLToPath(new URL('./web/admin.html', import.meta.url)),
       },
     },
   },

@@ -16,7 +16,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PORT = 8791;
 const BASE = `http://127.0.0.1:${PORT}`;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fundwatch-portfolio-'));
@@ -52,7 +52,7 @@ async function waitFor(url, timeoutMs = 30000) {
 
 let server;
 function start() {
-  server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'scripts/dev-server.mjs', '--no-qr'], {
+  server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'scripts/dev/dev-server.mjs', '--no-qr'], {
     cwd: ROOT,
     env: { ...process.env, PORT: String(PORT), DB_PATH: DB },
     stdio: 'ignore',

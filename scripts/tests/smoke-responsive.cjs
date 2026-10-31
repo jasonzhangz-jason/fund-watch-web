@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const ROOT = path.resolve(__dirname, '..');
+const ROOT = path.resolve(__dirname, '..', '..');
 const PORT = 8790;
 const BASE = `http://127.0.0.1:${PORT}`;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fundwatch-resp-'));
@@ -31,7 +31,7 @@ const DEVICES = [
 
 const isMobile = (d) => d.viewport.width <= 640;
 
-const server = spawn(process.execPath, ['scripts/dev-server.mjs', '--no-qr'], {
+const server = spawn(process.execPath, ['scripts/dev/dev-server.mjs', '--no-qr'], {
   cwd: ROOT, env: { ...process.env, PORT: String(PORT), DB_PATH: DB }, stdio: 'ignore',
 });
 

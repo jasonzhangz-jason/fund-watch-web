@@ -18,9 +18,9 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { toTerminal } from './qr.mjs';
+import { toTerminal } from '../lib/qr.mjs';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const API_PORT = Number(process.env.PORT || 8787);
 const WEB_PORT = Number(process.env.WEB_PORT || 5173);
 const OPEN = process.argv.includes('--open');
@@ -163,7 +163,7 @@ const main = async () => {
   }
 
   console.log(`${C.dim}正在启动后端(${API_PORT}) 与 前端(${WEB_PORT})…${C.reset}\n`);
-  startChild('api', C.blue, ['--disable-warning=ExperimentalWarning', 'scripts/dev-server.mjs', '--no-qr'], { PORT: String(API_PORT) });
+  startChild('api', C.blue, ['--disable-warning=ExperimentalWarning', 'scripts/dev/dev-server.mjs', '--no-qr'], { PORT: String(API_PORT) });
   startChild('web', C.green, [path.join('node_modules', 'vite', 'bin', 'vite.js')], { PORT: String(API_PORT) });
 
   // 2. 等两个服务都就绪
