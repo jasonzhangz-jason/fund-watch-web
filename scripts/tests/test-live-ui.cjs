@@ -109,39 +109,120 @@ function startWeb() {
   const pwd = 'live123456';
 
   try {
-    /* ---------- 1. 未登录状态 ---------- */
-    console.log('\n【1】未登录：自选页显示登录引导');
+    /* ---------- 1. 未登录：本地模式可用 ---------- */
+    console.log('\n【1】未登录：本地模式（数据存浏览器）');
     await page.goto(`${WEB}/#/watchlist`, { waitUntil: 'load' });
     await wait(800);
     const hint = await page.$eval('body', (b) => b.innerText);
-    check('显示“登录后自选会保存到账号”引导', hint.includes('登录后自选会保存到账号'));
-    check('提供「立即登录」入口', hint.includes('立即登录'));
+    check('显示「本地自选」提示', hint.includes('本地自选'), hint.slice(0, 80));
+    check('仍提供登录入口（可选，不阻断）', hint.includes('登录'));
 
     /* ---------- 1b. 未登录：不得出现任何静态/演示数据 ---------- */
     console.log('\n【1b】未登录：所有页面不展示静态数据');
-    const anonWatch = await page.$eval('body', (b) => b.innerText);
-    check('自选页为空态 + 登录引导', anonWatch.includes('登录后可添加自选'), anonWatch.slice(0, 90));
-    check('自选页无演示自选基金', !anonWatch.includes('华商新趋势优选混合'));
+    check('自选页为空态', hint.includes('还没有自选基金'), hint.slice(0, 80));
+    check('自选页无演示自选基金', !hint.includes('华商新趋势优选混合'));
 
     await page.goto(`${WEB}/#/`, { waitUntil: 'load' });
     await wait(900);
     const anonLedger = await page.$eval('body', (b) => b.innerText);
-    check('账本页显示登录引导', anonLedger.includes('登录后即可记账'));
+    check('账本页为空态（还没有持仓）', anonLedger.includes('还没有持仓'), anonLedger.slice(0, 90));
     check('账本页无静态资产数据', !anonLedger.includes('623,336.79') && !anonLedger.includes('华商新趋势优选混合'), anonLedger.slice(0, 90));
     check('账本页账户资产为 0.00', anonLedger.includes('0.00'));
-    check('账本页无演示持仓行', (await page.$$('ul li')).length === 0, String((await page.$$('ul li')).length));
+    check('账本页无持仓行', (await page.$$('ul li')).length === 0, String((await page.$$('ul li')).length));
 
     await page.goto(`${WEB}/#/mine`, { waitUntil: 'load' });
     await wait(900);
     const anonMine = await page.$eval('body', (b) => b.innerText);
     check('我的页显示未登录态', anonMine.includes('未登录'));
-    check('我的页无持仓明细（未登录不渲染）', !anonMine.includes('华商新趋势优选混合') && !anonMine.includes('我的持仓明细'));
+    check('我的页说明本地模式', anonMine.includes('本地模式'), anonMine.slice(0, 90));
+    check('我的页无持仓明细', !anonMine.includes('华商新趋势优选混合'));
 
     await page.goto(`${WEB}/#/add`, { waitUntil: 'load' });
     await wait(900);
     const anonAdd = await page.$eval('body', (b) => b.innerText);
-    check('添加持仓页要求登录', anonAdd.includes('登录后即可记账'), anonAdd.slice(0, 80));
-    check('添加持仓页不显示表单', !anonAdd.includes('请输入持有金额'));
+    check('添加持仓页说明数据存本浏览器', anonAdd.includes('本浏览器'), anonAdd.slice(0, 80));
+    check('添加持仓页直接显示表单（不再要求登录）', anonAdd.includes('持有金额'));
+
+    /* ---------- 1d. 游客记账：写入 localStorage → 刷新仍在 ---------- */
+    console.log('\n【1d】游客记账：localStorage 持久化 + 派生页面可用');
+    check('未登录可填写持仓表单', (await page.$('input[aria-label="持有金额"]')) !== null);
+    await page.click('button[aria-label="选择基金"]');
+    await wait(400);
+    await page.type('input[aria-label="搜索基金"]', '161725');
+    // 轮询真实搜索结果
+    let optionReady = false;
+    for (let i = 0; i < 25; i++) {
+      await wait(300);
+      optionReady = await page.$$eval('ul li button', (els) => els.length > 0).catch(() => false);
+      if (optionReady) break;
+    }
+    check('搜索到基金（真实接口）', optionReady);
+    await page.click('ul li button');
+    await wait(500);
+    await page.type('input[aria-label="持有金额"]', '10000');
+    await page.type('input[aria-label="持有收益"]', '500');
+    await wait(300);
+    await page.click('button ::-p-text(完成)');
+    await wait(1200);
+
+    const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('fundwatch_local_v1') || '{}'));
+    check('持仓写入 localStorage', Array.isArray(stored.positions) && stored.positions.length === 1, JSON.stringify(stored).slice(0, 120));
+    check(
+      '金额与收益已保存',
+      stored.positions?.[0]?.amount === 10000 && stored.positions?.[0]?.profit === 500,
+      JSON.stringify(stored.positions),
+    );
+
+    await page.goto(`${WEB}/#/`, { waitUntil: 'load' });
+    await wait(1200);
+    const guestLedger = await page.$eval('body', (b) => b.innerText);
+    check('账本展示本地持仓（含代码/名称）', guestLedger.includes('161725') || guestLedger.includes('招商中证白酒'), guestLedger.slice(0, 120));
+    check('账本展示持仓收益率', guestLedger.includes('收益率'));
+    check('账本持仓行数为 1', (await page.$$('ul li')).length === 1, String((await page.$$('ul li')).length));
+    check('账本标注本地记账', guestLedger.includes('本地记账'), guestLedger.slice(0, 120));
+
+    await page.reload({ waitUntil: 'load' });
+    await wait(1500);
+    const afterReload = await page.$eval('body', (b) => b.innerText);
+    check('刷新后本地持仓仍在（持久化）', afterReload.includes('161725') || afterReload.includes('招商中证白酒'), afterReload.slice(0, 120));
+
+    // 本地自选
+    await page.goto(`${WEB}/#/search`, { waitUntil: 'load' });
+    await wait(800);
+    await page.type('input[aria-label="搜索基金"]', '白酒');
+    let addReady = false;
+    for (let i = 0; i < 25; i++) {
+      await wait(300);
+      addReady = await page.$$eval('ul li button', (els) => els.some((b) => b.textContent?.includes('＋自选'))).catch(() => false);
+      if (addReady) break;
+    }
+    if (addReady) {
+      await page.click('ul li button ::-p-text(＋自选)');
+      await wait(600);
+    }
+    const stored2 = await page.evaluate(() => JSON.parse(localStorage.getItem('fundwatch_local_v1') || '{}'));
+    check('自选写入 localStorage', Array.isArray(stored2.watch) && stored2.watch.length >= 1, JSON.stringify(stored2.watch));
+
+    await page.goto(`${WEB}/#/watchlist`, { waitUntil: 'load' });
+    await wait(1200);
+    const guestWatch = await page.$eval('body', (b) => b.innerText);
+    check('自选页展示本地自选', !guestWatch.includes('还没有自选基金'), guestWatch.slice(0, 120));
+
+    // 派生页面（穿透 / 相关性）不再要求登录
+    await page.goto(`${WEB}/#/lookthrough`, { waitUntil: 'load' });
+    await wait(2500);
+    const guestLtText = await page.$eval('body', (b) => b.innerText);
+    check('持仓穿透页不再要求登录', !guestLtText.includes('登录后查看持仓穿透'), guestLtText.slice(0, 90));
+
+    await page.goto(`${WEB}/#/correlation`, { waitUntil: 'load' });
+    await wait(2500);
+    const guestCorrText = await page.$eval('body', (b) => b.innerText);
+    check('相关性页不再要求登录', !guestCorrText.includes('登录后查看相关性分析'), guestCorrText.slice(0, 90));
+
+    // 清空本地数据，后续用例从「干净账号」开始
+    await page.evaluate(() => localStorage.removeItem('fundwatch_local_v1'));
+    await page.goto(`${WEB}/#/`, { waitUntil: 'load' });
+    await wait(600);
 
     /* ---------- 1c. 顶部标题区已剔除，入口改由 Tab / 菜单承载 ---------- */
     console.log('\n【1c】三页顶部无标题区');
@@ -893,6 +974,92 @@ function startWeb() {
     check('相关性页无横向溢出', overflowCorr <= 1, `${overflowCorr}px`);
     await corrPage.screenshot({ path: path.join(ROOT, 'shots', '基金相关性分析.png') });
     await corrPage.close();
+
+    /* ---------- 15. 本地数据合并到账号 ---------- */
+    console.log('\n【15】本地数据合并到账号');
+    // 先退出登录，回到本地模式
+    await page.goto(`${WEB}/#/mine`, { waitUntil: 'load' });
+    await wait(800);
+    const mineNow = await page.$eval('body', (b) => b.innerText);
+    if (mineNow.includes('退出登录')) {
+      await page.click('button ::-p-text(退出登录)');
+      await wait(1000);
+    }
+    check('已回到未登录（本地模式）', (await page.$eval('body', (b) => b.innerText)).includes('未登录'));
+
+    // 写入一条本地数据，模拟「游客记的账」
+    await page.evaluate(() => {
+      localStorage.setItem(
+        'fundwatch_local_v1',
+        JSON.stringify({
+          v: 1,
+          watch: [{ code: '161725', name: '招商中证白酒指数(LOF)A' }],
+          positions: [{ code: '161725', name: '招商中证白酒指数(LOF)A', amount: 8888, profit: 88 }],
+        }),
+      );
+    });
+    // 必须 reload：localStorage 是外部写入，同文档内 store 不会自动感知
+    await page.goto(`${WEB}/#/mine`, { waitUntil: 'load' });
+    await page.reload({ waitUntil: 'load' });
+    await wait(1500);
+    const mineLocal = await page.$eval('body', (b) => b.innerText);
+    check('未登录时展示本地持仓合计', mineLocal.includes('8,888.00'), mineLocal.replace(/\n+/g, ' | ').slice(0, 120));
+    check('未登录时「我的持仓」显示本地只数', mineLocal.includes('1 只'), mineLocal.replace(/\n+/g, ' | ').slice(0, 120));
+
+    // 登录（root/root）—— 先确保切到「登录」Tab，再点**非 Tab** 的提交按钮
+    await page.click('button[aria-label="登录或注册"]');
+    await page.waitForSelector('input[aria-label="用户名"]', { timeout: 8000 });
+    await page.click('button[aria-label="切换到登录"]');
+    await wait(300);
+    await page.type('input[aria-label="用户名"]', 'root');
+    await page.type('input[aria-label="密码"]', 'root');
+    await page.evaluate(() => {
+      const btn = [...document.querySelectorAll('button')].find(
+        (b) => (b.textContent || '').trim() === '登录' && b.getAttribute('role') !== 'tab',
+      );
+      btn?.click();
+    });
+    let rootMe = { user: null };
+    for (let i = 0; i < 40; i++) {
+      await wait(250);
+      rootMe = await page.evaluate(async () => (await fetch('/api/auth/me')).json());
+      if (rootMe.user?.username === 'root') break;
+    }
+    check('已登录 root', rootMe.user?.username === 'root', JSON.stringify(rootMe.user));
+
+    // 合并提示 → 点合并
+    await page.goto(`${WEB}/#/mine`, { waitUntil: 'load' });
+    await page.reload({ waitUntil: 'load' });
+    await wait(1500);
+    const mergeText = await page.$eval('body', (b) => b.innerText);
+    check('登录后提示本地数据可合并', mergeText.includes('合并到账号'), mergeText.replace(/\n+/g, ' | ').slice(0, 140));
+    if (mergeText.includes('合并到账号')) {
+      await page.evaluate(() => {
+        const btn = [...document.querySelectorAll('button')].find((b) => (b.textContent || '').includes('合并到账号'));
+        btn?.click();
+      });
+      await wait(2500);
+    }
+
+    const serverPos = await page.evaluate(async () => (await fetch('/api/positions')).json());
+    check(
+      '本地持仓已合并到账号（金额一致）',
+      (serverPos.items || []).some((i) => i.code === '161725' && Number(i.amount) === 8888),
+      JSON.stringify(serverPos.items),
+    );
+    const serverWatch = await page.evaluate(async () => (await fetch('/api/watchlist')).json());
+    check(
+      '本地自选已合并到账号',
+      (serverWatch.items || []).some((i) => i.code === '161725'),
+      JSON.stringify(serverWatch.items),
+    );
+    const localAfter = await page.evaluate(() => localStorage.getItem('fundwatch_local_v1'));
+    const parsedAfter = localAfter ? JSON.parse(localAfter) : null;
+    check(
+      '合并后清空本地数据',
+      !parsedAfter || (parsedAfter.positions || []).length === 0,
+      String(localAfter),
+    );
 
     console.log(`\n结果：通过 ${pass} / 失败 ${fail}`);
   } catch (e) {

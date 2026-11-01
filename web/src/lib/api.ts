@@ -308,9 +308,11 @@ export const api = {
   estimates: (codes: string[]) =>
     request<{ ok: true; items: Estimate[] }>(`/api/estimate?codes=${codes.join(',')}`),
 
-  /** 历史净值（size=1 即最新一条，含当日涨幅 jzzzl） */
-  nav: (code: string, size = 1) =>
-    request<{ ok: true; code: string; total: number; items: NavItem[] }>(`/api/nav?code=${code}&size=${size}`),
+  /** 历史净值（size=1 即最新一条，含当日涨幅 jzzzl）；page 用于游客模式拉多页算相关性 */
+  nav: (code: string, size = 1, page = 1) =>
+    request<{ ok: true; code: string; total: number; items: NavItem[] }>(
+      `/api/nav?code=${code}&size=${size}&page=${page}`,
+    ),
 
   detail: (code: string) => request<FundDetail>(`/api/detail?code=${code}`),
 

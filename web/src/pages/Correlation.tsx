@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Activity, LogIn, RefreshCw } from 'lucide-react';
+import { Activity, RefreshCw } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { NavBar, PhoneFrame } from '../components/chrome';
 import { Card, EmptyState } from '../components/ui';
 import TrendCompare from '../components/TrendCompare';
 import { useAuth } from '../state/auth';
+import { useStore } from '../state/store';
 import { api, type Correlation } from '../lib/api';
+import { localCorrelation } from '../lib/guestMath';
 
 /** 相关性底色：正相关越强越红（同涨同跌），负相关越强越绿（分散效果好） */
 function corrStyle(v: number | null) {
@@ -26,19 +29,30 @@ const levelText = (v: number) => (v >= 0.8 ? '高度相关' : v >= 0.5 ? '中度
  *   用收益率而非净值本身：两只长期上涨的基金净值天然同向，直接对净值求相关会虚高。
  */
 export default function CorrelationPage() {
-  const { user, ready, openSheet } = useAuth();
+  const { user, ready } = useAuth();
+  const { funds: ledgerFunds } = useStore();
+  const navigate = useNavigate();
   const [days, setDays] = useState(60);
   const [data, setData] = useState<Correlation | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const positions = useMemo(
+    () => ledgerFunds.map((f) => ({ code: f.code, name: f.name, amount: f.amount, profit: f.profit })),
+    [ledgerFunds],
+  );
+
   const load = useCallback(
     async (win = days, force = false) => {
-      if (!user) return;
       setLoading(true);
       try {
-        const r = await api.correlation(win, force);
-        setData(r.correlation);
+        if (user) {
+          const r = await api.correlation(win, force);
+          setData(r.correlation);
+        } else {
+          // 本地模式：用公开的 /api/nav 现算，口径与后端一致
+          setData(await localCorrelation(positions, win));
+        }
         setError('');
       } catch (e) {
         setError((e as Error).message || '加载失败');
@@ -46,13 +60,13 @@ export default function CorrelationPage() {
         setLoading(false);
       }
     },
-    [user, days],
+    [user, days, positions],
   );
 
   useEffect(() => {
     void load(days);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, days]);
+  }, [user, days, positions]);
 
   const funds = data?.funds ?? [];
   /** 短标签：矩阵表头用序号，图例用完整名称 */
@@ -67,24 +81,24 @@ export default function CorrelationPage() {
     return '相关性很低甚至负相关，分散效果很好';
   }, [data]);
 
-  if (ready && !user) {
+  if (ready && !ledgerFunds.length) {
     return (
       <PhoneFrame>
         <NavBar title="基金相关性分析" />
         <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-page px-8">
           <EmptyState
             icon={<Activity size={30} />}
-            title="登录后查看相关性分析"
-            desc="需要读取你的账本持仓与历史净值，计算基金之间走势的相似程度"
+            title="还没有持仓可以分析"
+            desc={user ? '先在账本里添加至少 2 只基金，再看它们走势的相似程度' : '先在账本里添加至少 2 只基金（本地记账即可），再看它们走势的相似程度'}
             action={
               <button
                 type="button"
-                aria-label="登录或注册"
-                onClick={openSheet}
+                aria-label="去添加持仓"
+                onClick={() => navigate('/add')}
                 className="mt-2 flex h-11 items-center gap-2 rounded-full bg-primary px-6 text-[15px] font-semibold text-white active:opacity-90"
               >
-                <LogIn size={17} />
-                登录 / 注册
+                <Activity size={17} />
+                添加持仓
               </button>
             }
           />

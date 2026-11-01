@@ -70,7 +70,7 @@ export default function Watchlist() {
   return (
     <PhoneFrame>
       <PullToRefresh onRefresh={pullRefresh}>
-        {/* 未登录提示：说明自选为什么要登录 */}
+        {/* 未登录：提示数据只在本地（不阻断使用） */}
         {!user ? (
           <button
             type="button"
@@ -78,11 +78,11 @@ export default function Watchlist() {
             onClick={openSheet}
             className="flex w-full items-center gap-2 bg-primary-tint px-4 py-2 text-left text-[12.5px] text-primary active:opacity-80"
           >
-            <span className="flex-1">登录后自选会保存到账号，换设备也能看到</span>
-            <span className="shrink-0 font-semibold">立即登录 ›</span>
+            <span className="flex-1">本地自选 · 仅保存在此浏览器，登录后可合并到账号</span>
+            <span className="shrink-0 font-semibold">登录 ›</span>
           </button>
         ) : null}
-        {user && watchError ? (
+        {watchError ? (
           <p className="flex items-center gap-1.5 bg-[#FFF6F6] px-4 py-2 text-[12.5px] text-up">
             <WifiOff size={13} />
             {watchError}
@@ -110,7 +110,7 @@ export default function Watchlist() {
             right={
               <span className="flex items-center gap-1">
                 {marketHint(marketState, updatedAt, list.length) ||
-                  (watchState === 'live' ? '自选已同步到账号' : '待登录')}{' '}
+                  (watchState === 'live' ? '自选已同步到账号' : watchState === 'local' ? '本地自选 · 仅此浏览器' : '')}{' '}
                 · 60s
                 <RefreshCw size={11} className={marketState === 'loading' ? 'animate-spin' : ''} />
               </span>
@@ -122,16 +122,16 @@ export default function Watchlist() {
         {list.length === 0 ? (
           <EmptyState
             icon={<Search size={28} />}
-            title={user ? '还没有自选基金' : '登录后可添加自选'}
-            desc={user ? '搜索基金并点击「＋自选」即可加入' : '自选保存在你的账号里，换设备也能看到'}
+            title="还没有自选基金"
+            desc={user ? '搜索基金并点击「＋自选」即可加入' : '搜索基金并点击「＋自选」即可加入；数据保存在本浏览器'}
             action={
               <button
                 type="button"
-                aria-label={user ? '去搜索' : '登录或注册'}
-                onClick={() => (user ? navigate('/search') : openSheet())}
+                aria-label="去搜索"
+                onClick={() => navigate('/search')}
                 className="mt-2 rounded-full bg-primary px-5 py-2 text-[14px] font-semibold text-white active:opacity-90"
               >
-                {user ? '去搜索' : '登录 / 注册'}
+                去搜索
               </button>
             }
           />

@@ -1,9 +1,18 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, isOffline, type PositionItem, type WatchItem } from '../lib/api';
 import { DEFAULT_SOURCE, type DataSourceKey } from '../data/sources';
+import {
+  clearLocal,
+  localMovePosition,
+  localRemovePositions,
+  localSavePosition,
+  localToggleWatch,
+  readLocal,
+  subscribeLocal,
+} from '../lib/localData';
 import { useAuth } from './auth';
 
-/** 前端持仓模型（数据全部来自后端 /api/positions + /api/portfolio） */
+/** 前端持仓模型（账号模式来自 /api/positions；本地模式来自 localStorage） */
 export type Fund = {
   code: string;
   name: string;
@@ -27,11 +36,17 @@ export type Fund = {
 export type SortKey = 'dayProfit' | 'dayChange' | 'latestChange' | 'estChange' | 'rate';
 export type SortDir = 'desc' | 'asc';
 
-/** 数据来源：live=服务端实时，anonymous=未登录（不展示任何静态数据），error=接口失败 */
-export type DataState = 'idle' | 'loading' | 'live' | 'anonymous' | 'error';
+/** 数据来源：live=账号（服务端），local=本浏览器，error=接口失败 */
+export type DataState = 'idle' | 'loading' | 'live' | 'local' | 'anonymous' | 'error';
+/** 数据归属：account=已登录写服务端，local=未登录写 localStorage */
+export type StoreMode = 'account' | 'local';
 
 type Store = {
-  /* ---- 持仓（账号级服务端持久化）---- */
+  /** 当前数据归属（决定写服务端还是写 localStorage） */
+  mode: StoreMode;
+  isGuest: boolean;
+
+  /* ---- 持仓 ---- */
   funds: Fund[];
   positionsState: DataState;
   positionsError: string;
@@ -42,7 +57,7 @@ type Store = {
   move: (code: string, dir: 'top' | 'up' | 'down') => void;
   sortFunds: (list: Fund[], key: SortKey, dir: SortDir) => Fund[];
 
-  /* ---- 自选（账号级服务端持久化）---- */
+  /* ---- 自选 ---- */
   watchItems: WatchItem[];
   watchState: DataState;
   watchError: string;
@@ -51,6 +66,14 @@ type Store = {
   toggleFavorite: (code: string, name?: string) => Promise<void>;
   reloadWatchlist: () => Promise<void>;
 
+  /* ---- 本地数据（未登录）---- */
+  /** 把本浏览器的自选/持仓合并进账号（登录后由用户显式触发） */
+  syncLocalToAccount: () => Promise<{ watch: number; positions: number }>;
+  /** 清空本浏览器数据（危险操作，需二次确认由调用方负责） */
+  clearLocalData: () => void;
+  /** 本地是否有数据（账号模式下用于提示可合并） */
+  localPending: { watch: number; positions: number };
+
   /* ---- 其他 ---- */
   dataSource: DataSourceKey;
   setDataSource: (source: DataSourceKey) => void;
@@ -58,7 +81,7 @@ type Store = {
 
 const StoreContext = createContext<Store | null>(null);
 
-/** 账号持仓 → 前端 Fund（行情字段由 useMarketData / 账本服务填充） */
+/** 持仓 → 前端 Fund（行情字段由 useMarketData / 账本页填充） */
 const toFund = (p: PositionItem): Fund => ({
   code: p.code,
   name: p.name,
@@ -73,18 +96,26 @@ const toFund = (p: PositionItem): Fund => ({
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
+  const mode: StoreMode = user ? 'account' : 'local';
 
   /* ---------------- 持仓 ---------------- */
-  // 未登录时不展示任何静态数据：持仓为空，由页面给出登录引导
   const [funds, setFunds] = useState<Fund[]>([]);
   const [positionsState, setPositionsState] = useState<DataState>('idle');
   const [positionsError, setPositionsError] = useState('');
 
   const reloadPositions = useCallback(async () => {
+    // 未登录：读浏览器本地数据（不是演示数据，是用户自己记的账）
     if (!user) {
-      setFunds([]);
-      setPositionsState('anonymous');
-      setPositionsError('');
+      try {
+        const { positions } = readLocal();
+        setFunds(positions.map(toFund));
+        setPositionsState('local');
+        setPositionsError('');
+      } catch (e) {
+        setFunds([]);
+        setPositionsState('error');
+        setPositionsError((e as Error).message || '本地数据读取失败');
+      }
       return;
     }
     setPositionsState('loading');
@@ -111,8 +142,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const reloadWatchlist = useCallback(async () => {
     if (!user) {
-      setWatchItems([]);
-      setWatchState('anonymous');
+      const { watch } = readLocal();
+      setWatchItems(watch);
+      setWatchState('local');
       setWatchError('');
       return;
     }
@@ -133,13 +165,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     void reloadWatchlist();
   }, [reloadWatchlist]);
 
+  /* 本地数据变化 → 跨标签页/其他组件写入后同步（仅未登录时） */
+  useEffect(() => {
+    if (user) return;
+    return subscribeLocal(() => {
+      void reloadPositions();
+      void reloadWatchlist();
+    });
+  }, [user, reloadPositions, reloadWatchlist]);
+
   const favoriteCodes = useMemo(() => watchItems.map((i) => i.code), [watchItems]);
   const isFavorite = useCallback((code: string) => favoriteCodes.includes(code), [favoriteCodes]);
 
   const toggleFavorite = useCallback<Store['toggleFavorite']>(
     async (code, name = '') => {
-      // 未登录：自选属于账号数据，不写入任何本地状态（页面会引导登录）
-      if (!user) return;
+      // 未登录：写浏览器本地（体验一致，只是不同步到账号）
+      if (!user) {
+        localToggleWatch(code, name);
+        return;
+      }
       const already = favoriteCodes.includes(code);
       const prev = watchItems;
       setWatchItems(already ? prev.filter((i) => i.code !== code) : [...prev, { code, name }]);
@@ -156,7 +200,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [favoriteCodes, watchItems, user],
   );
 
-  /* ---------------- 持仓操作（乐观更新 + 服务端落库） ---------------- */
+  /* ---------------- 持仓操作（本地模式写 localStorage，账号模式写服务端） ---------------- */
   const addFund = useCallback<Store['addFund']>(
     ({ code, name, amount, profit }) => {
       const prev = funds;
@@ -166,7 +210,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           ? prev.map((f) => (f.code === code ? { ...f, name: name || f.name, amount, profit } : f))
           : [...prev, toFund({ code, name, amount, profit })],
       );
-      if (!user) return;
+      if (!user) {
+        localSavePosition({ code, name, amount, profit });
+        setPositionsState('local');
+        setPositionsError('');
+        return;
+      }
       api.positions
         .save({ code, name, amount, profit })
         .then(() => {
@@ -186,15 +235,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const prev = funds;
       const next = prev.map((f) => (f.code === code ? { ...f, ...patch } : f));
       setFunds(next);
-      if (!user) return;
       const row = next.find((f) => f.code === code);
       if (!row) return;
-      api.positions
-        .save({ code: row.code, name: row.name, amount: row.amount, profit: row.profit })
-        .catch((e) => {
-          setFunds(prev);
-          setPositionsError(isOffline(e) ? '后端不可用，持仓未保存' : (e as Error).message);
-        });
+      if (!user) {
+        localSavePosition({ code: row.code, name: row.name, amount: row.amount, profit: row.profit });
+        setPositionsState('local');
+        return;
+      }
+      api.positions.save({ code: row.code, name: row.name, amount: row.amount, profit: row.profit }).catch((e) => {
+        setFunds(prev);
+        setPositionsError(isOffline(e) ? '后端不可用，持仓未保存' : (e as Error).message);
+      });
     },
     [funds, user],
   );
@@ -203,7 +254,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     (codes) => {
       const prev = funds;
       setFunds(prev.filter((f) => !codes.includes(f.code)));
-      if (!user) return;
+      if (!user) {
+        localRemovePositions(codes);
+        setPositionsState('local');
+        return;
+      }
       api.positions.remove(codes).catch((e) => {
         setFunds(prev);
         setPositionsError(isOffline(e) ? '后端不可用，删除未生效' : (e as Error).message);
@@ -223,7 +278,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       else if (dir === 'up') next.splice(Math.max(0, idx - 1), 0, item);
       else next.splice(Math.min(next.length, idx + 1), 0, item);
       setFunds(next);
-      if (!user) return;
+      if (!user) {
+        localMovePosition(code, dir);
+        setPositionsState('local');
+        return;
+      }
       api.positions.reorder(code, dir).catch((e) => {
         setFunds(prev);
         setPositionsError(isOffline(e) ? '后端不可用，排序未保存' : (e as Error).message);
@@ -252,11 +311,55 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  /* ---------------- 本地 ↔ 账号 ---------------- */
+  const [localPending, setLocalPending] = useState(() => {
+    const { watch, positions } = readLocal();
+    return { watch: watch.length, positions: positions.length };
+  });
+
+  // 登录态变化时刷新「可合并条数」（登录后才提示合并）
+  useEffect(() => {
+    const { watch, positions } = readLocal();
+    setLocalPending({ watch: watch.length, positions: positions.length });
+  }, [user]);
+
+  const syncLocalToAccount = useCallback<Store['syncLocalToAccount']>(async () => {
+    const { watch, positions } = readLocal();
+    let w = 0;
+    let p = 0;
+    for (const item of watch) {
+      await api.watchlist.add(item.code, item.name);
+      w += 1;
+    }
+    for (const item of positions) {
+      await api.positions.save({
+        code: item.code,
+        name: item.name,
+        amount: item.amount,
+        profit: item.profit,
+      });
+      p += 1;
+    }
+    clearLocal();
+    setLocalPending({ watch: 0, positions: 0 });
+    await Promise.all([reloadPositions(), reloadWatchlist()]);
+    return { watch: w, positions: p };
+  }, [reloadPositions, reloadWatchlist]);
+
+  const clearLocalData = useCallback(() => {
+    clearLocal();
+    setLocalPending({ watch: 0, positions: 0 });
+    void reloadPositions();
+    void reloadWatchlist();
+  }, [reloadPositions, reloadWatchlist]);
+
   /* ---------------- 其他 ---------------- */
   const [dataSource, setDataSource] = useState<DataSourceKey>(DEFAULT_SOURCE);
 
   const value = useMemo<Store>(
     () => ({
+      mode,
+      isGuest: mode === 'local',
       funds,
       positionsState,
       positionsError,
@@ -273,10 +376,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       isFavorite,
       toggleFavorite,
       reloadWatchlist,
+      syncLocalToAccount,
+      clearLocalData,
+      localPending,
       dataSource,
       setDataSource,
     }),
     [
+      mode,
       funds,
       positionsState,
       positionsError,
@@ -293,6 +400,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       isFavorite,
       toggleFavorite,
       reloadWatchlist,
+      syncLocalToAccount,
+      clearLocalData,
+      localPending,
       dataSource,
     ],
   );

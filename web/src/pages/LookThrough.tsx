@@ -1,20 +1,23 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronUp, LogIn, PieChart, RefreshCw } from 'lucide-react';
+import { ChevronDown, ChevronUp, PieChart, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { NavBar, PhoneFrame } from '../components/chrome';
 import { Card, EmptyState } from '../components/ui';
 import { useAuth } from '../state/auth';
-import { fmtMoney } from '../state/store';
+import { fmtMoney, useStore } from '../state/store';
 import { api, type LookThrough as LookThroughData } from '../lib/api';
+import { localLookthrough } from '../lib/guestMath';
 
 /**
  * 持仓穿透（对应「我的 → 持仓穿透」）
  *   把持仓按各基金**前十大重仓股**穿透到个股：显示个股穿透金额、占账户比，
  *   以及**具体哪几只基金持有它**（各自的占净值比例与贡献金额）。
  *   覆盖比例 = 穿透金额 / 账户资产，非 100%（只覆盖前十大重仓），界面如实标注。
+ *   未登录时用本地持仓 + 公开接口（/api/holdings）在浏览器内计算，口径与后端一致。
  */
 export default function LookThrough() {
-  const { user, ready, openSheet } = useAuth();
+  const { user } = useAuth();
+  const { funds, isGuest } = useStore();
   const navigate = useNavigate();
   const [data, setData] = useState<LookThroughData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -23,13 +26,22 @@ export default function LookThrough() {
   /** 排序：按穿透金额 / 占账户比 / 涉及基金数 */
   const [sortBy, setSortBy] = useState<'amount' | 'ratio' | 'fundCount'>('amount');
 
+  const positions = useMemo(
+    () => funds.map((f) => ({ code: f.code, name: f.name, amount: f.amount, profit: f.profit })),
+    [funds],
+  );
+
   const load = useCallback(
     async (force = false) => {
-      if (!user) return;
       setLoading(true);
       try {
-        const r = await api.lookthrough(force);
-        setData(r.lookthrough);
+        if (user) {
+          const r = await api.lookthrough(force);
+          setData(r.lookthrough);
+        } else {
+          // 本地模式：只读公开接口（/api/holdings），不外传持仓
+          setData(await localLookthrough(positions));
+        }
         setError('');
       } catch (e) {
         setError((e as Error).message || '加载失败');
@@ -37,7 +49,7 @@ export default function LookThrough() {
         setLoading(false);
       }
     },
-    [user],
+    [user, positions],
   );
 
   useEffect(() => {
@@ -49,25 +61,29 @@ export default function LookThrough() {
     return [...data.items].sort((a, b) => b[sortBy] - a[sortBy]);
   }, [data, sortBy]);
 
-  /* ---------------- 未登录 ---------------- */
-  if (ready && !user) {
+  /* ---------------- 没有持仓（本地/账号都一样） ---------------- */
+  if (!funds.length) {
     return (
       <PhoneFrame>
         <NavBar title="持仓穿透" />
         <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-page px-8">
           <EmptyState
             icon={<PieChart size={30} />}
-            title="登录后查看持仓穿透"
-            desc="穿透需要读取你的持仓，再按各基金重仓股逐层拆解"
+            title="还没有持仓可以穿透"
+            desc={
+              isGuest
+                ? '先在账本里添加持仓（本地记账即可），再按各基金重仓股逐层拆解'
+                : '先在账本里添加持仓，再按各基金重仓股逐层拆解'
+            }
             action={
               <button
                 type="button"
-                aria-label="登录或注册"
-                onClick={openSheet}
+                aria-label="去添加持仓"
+                onClick={() => navigate('/add')}
                 className="mt-2 flex h-11 items-center gap-2 rounded-full bg-primary px-6 text-[15px] font-semibold text-white active:opacity-90"
               >
-                <LogIn size={17} />
-                登录 / 注册
+                <PieChart size={17} />
+                添加持仓
               </button>
             }
           />

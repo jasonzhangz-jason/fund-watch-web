@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronRight, LogIn, Search } from 'lucide-react';
+import { ChevronRight, Search } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { NavBar, PhoneFrame } from '../components/chrome';
 import { Card } from '../components/ui';
@@ -10,11 +10,11 @@ import { api, type SearchItem } from '../lib/api';
 type Picked = { code: string; name: string } | null;
 
 /** 添加持仓（对应截图 账本-添加持仓）
- *  持仓属于账号数据：未登录时只给出登录引导，不展示任何静态内容；
+ *  未登录也可使用：数据写入浏览器 localStorage（「本地记账」），登录后可一键合并到账号；
  *  基金选择器走后端真实搜索 /api/search（无关键词时列出账本已有基金）。 */
 export default function AddPosition() {
   const navigate = useNavigate();
-  const { user, openSheet } = useAuth();
+  const { user } = useAuth();
   const { funds, addFund, positionsState } = useStore();
   const [picked, setPicked] = useState<Picked>(null);
   const [amount, setAmount] = useState('');
@@ -66,36 +66,16 @@ export default function AddPosition() {
     navigate(-1);
   };
 
-  /* 未登录：持仓属于账号数据，这里只给登录引导，不展示任何静态内容 */
-  if (!user) {
-    return (
-      <PhoneFrame>
-        <NavBar title="添加持仓" />
-        <div className="flex flex-1 flex-col items-center justify-center bg-page px-8 text-center">
-          <span className="flex h-14 w-14 items-center justify-center rounded-full bg-field text-ink-3">
-            <LogIn size={24} />
-          </span>
-          <p className="mt-3 text-[15px] font-medium text-ink">登录后即可记账</p>
-          <p className="mt-1 text-[12.5px] leading-relaxed text-ink-2">
-            持仓保存在你的账号里（SQLite），换设备也能看到
-          </p>
-          <button
-            type="button"
-            onClick={openSheet}
-            className="mt-5 h-11 w-full rounded-full bg-primary text-[16px] font-semibold text-white active:opacity-90"
-          >
-            登录 / 注册
-          </button>
-        </div>
-      </PhoneFrame>
-    );
-  }
-
   return (
     <PhoneFrame>
       <NavBar title="添加持仓" />
 
       <div className="no-scrollbar flex-1 overflow-y-auto bg-page px-4 pt-3">
+        {!user ? (
+          <p className="mb-2 rounded-md bg-primary-tint px-3 py-2 text-[12px] leading-relaxed text-primary">
+            当前未登录：数据只保存在本浏览器（localStorage），登录后可在「我的」页一键合并到账号。
+          </p>
+        ) : null}
         {positionsState === 'error' ? (
           <p className="mb-2 rounded-md bg-[#FFF6F6] px-3 py-2 text-[12px] text-up">
             后端不可用，持仓无法保存；请用 <code className="rounded bg-white px-1">pnpm start</code> 启动服务后重试。

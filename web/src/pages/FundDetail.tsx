@@ -128,11 +128,7 @@ export default function FundDetail() {
             <button
               type="button"
               onClick={() => {
-                // 未登录：自选属于账号数据，先引导登录
-                if (!user) {
-                  openSheet();
-                  return;
-                }
+                // 未登录也可以自选：写入浏览器 localStorage（登录后可合并到账号）
                 void toggleFavorite(code, name);
               }}
               className={[

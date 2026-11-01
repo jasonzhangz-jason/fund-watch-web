@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { LogIn, PlusCircle, RefreshCw } from 'lucide-react';
+import { PlusCircle, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { PhoneFrame, TabBar } from '../components/chrome';
 import { Card, ChangeChip, SortHeader, StatusLine, UpdatedTag } from '../components/ui';
@@ -37,13 +37,15 @@ function holdRate(amount: number, profit: number): number | null {
 
 /** 账本主页（对应截图 主页-1 / 主页-2）
  *  登录后走服务端账本服务 /api/portfolio：账户资产、当日收益、每日快照都在后端计算并落库；
- *  未登录或服务不可用时回落到本地行情推算，保证纯前端也能跑。60s 自动刷新 + 下拉刷新。 */
+ *  **未登录也可用**：持仓存在浏览器 localStorage，行情取自公开接口，前端本地推算。
+ *  60s 自动刷新 + 下拉刷新。 */
 export default function LedgerHome() {
-  const { funds, reloadPositions } = useStore();
+  const { funds, reloadPositions, isGuest, localPending, syncLocalToAccount } = useStore();
   const { user, openSheet } = useAuth();
   const navigate = useNavigate();
   const [pf, setPf] = useState<Portfolio | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [syncState, setSyncState] = useState<'idle' | 'busy' | 'done'>('idle');
   const [sortKey, setSortKey] = useState<'dayProfit' | 'dayChange' | 'rate' | null>(null);
   const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
 
@@ -199,14 +201,39 @@ export default function LedgerHome() {
               <span className="flex items-center gap-1">
                 {serverMode
                   ? `服务端已落库${updatedText ? ` · ${updatedText} 更新` : ''} · 60s`
-                  : !user
-                    ? '未登录'
+                  : isGuest
+                    ? `本地记账 · 仅此浏览器 · 60s`
                     : `${marketHint(marketState, updatedAt, list.length) || '行情不可用'} · 60s`}
                 <RefreshCw size={11} className={marketState === 'loading' ? 'animate-spin' : ''} />
               </span>
             }
           />
         </button>
+
+        {/* 登录后：提示把本浏览器数据合并到账号 */}
+        {user && (localPending.watch > 0 || localPending.positions > 0) ? (
+          <div className="mx-3 mt-2 flex items-center gap-2 rounded-lg bg-primary-tint px-3 py-2 text-[12.5px] text-primary">
+            <span className="flex-1">
+              本浏览器还有 {localPending.watch} 只自选 / {localPending.positions} 只持仓未同步
+            </span>
+            <button
+              type="button"
+              disabled={syncState === 'busy'}
+              onClick={async () => {
+                setSyncState('busy');
+                try {
+                  await syncLocalToAccount();
+                  setSyncState('done');
+                } catch {
+                  setSyncState('idle');
+                }
+              }}
+              className="shrink-0 rounded-full bg-primary px-3 py-1 text-[12px] font-semibold text-white disabled:opacity-60"
+            >
+              {syncState === 'busy' ? '合并中…' : syncState === 'done' ? '已合并' : '合并到账号'}
+            </button>
+          </div>
+        ) : null}
 
         {/* 持仓列表 */}
         <ul className="mt-1 bg-white">
@@ -251,26 +278,33 @@ export default function LedgerHome() {
         </ul>
 
         {list.length === 0 ? (
-          user ? (
-            <p className="px-4 py-10 text-center text-[13px] text-ink-3">暂无持仓，点上方 ⊕ →「添加持仓」开始记账</p>
-          ) : (
-            <div className="flex flex-col items-center px-8 py-10 text-center">
-              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-field text-ink-3">
-                <LogIn size={24} />
-              </span>
-              <p className="mt-3 text-[15px] font-medium text-ink">登录后即可记账</p>
-              <p className="mt-1 text-[12.5px] leading-relaxed text-ink-2">
-                持仓、当日收益与账户资产都保存在你的账号里
-              </p>
+          <div className="flex flex-col items-center px-8 py-10 text-center">
+            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-field text-ink-3">
+              <PlusCircle size={24} />
+            </span>
+            <p className="mt-3 text-[15px] font-medium text-ink">还没有持仓</p>
+            <p className="mt-1 text-[12.5px] leading-relaxed text-ink-2">
+              {isGuest
+                ? '点上方 ⊕ →「添加持仓」开始记账；数据保存在本浏览器，登录后可以合并到账号'
+                : '点上方 ⊕ →「添加持仓」开始记账'}
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate('/add')}
+              className="mt-5 h-11 w-full rounded-full bg-primary text-[16px] font-semibold text-white active:opacity-90"
+            >
+              添加持仓
+            </button>
+            {isGuest ? (
               <button
                 type="button"
                 onClick={openSheet}
-                className="mt-5 h-11 w-full rounded-full bg-primary text-[16px] font-semibold text-white active:opacity-90"
+                className="mt-2 text-[12.5px] font-medium text-primary active:opacity-80"
               >
-                登录 / 注册
+                登录后跨设备同步 ›
               </button>
-            </div>
-          )
+            ) : null}
+          </div>
         ) : null}
         <div className="h-4" />
       </PullToRefresh>
